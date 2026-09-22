@@ -15,6 +15,65 @@ const fontDisplay = "'Fraunces', Georgia, serif";
 const fontBody = "'Inter', -apple-system, sans-serif";
 const fontMono = "'IBM Plex Mono', monospace";
 
+// ================= SHOPPING LIST CONTEXT =================
+const ShoppingListContext = React.createContext(null);
+function useShoppingList() {
+  return React.useContext(ShoppingListContext);
+}
+function ShoppingListProvider({ children }) {
+  const [batches, setBatches] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("pe_shopping_batches");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [checked, setChecked] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("pe_shopping_checked");
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  const [overrides, setOverrides] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem("pe_shopping_overrides");
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+
+  React.useEffect(() => { try { window.localStorage.setItem("pe_shopping_batches", JSON.stringify(batches)); } catch {} }, [batches]);
+  React.useEffect(() => { try { window.localStorage.setItem("pe_shopping_checked", JSON.stringify(checked)); } catch {} }, [checked]);
+  React.useEffect(() => { try { window.localStorage.setItem("pe_shopping_overrides", JSON.stringify(overrides)); } catch {} }, [overrides]);
+
+  function addBatch(label, items) {
+    const cleanItems = items.filter((i) => i.grams > 0).map((i) => ({ name: i.name, grams: Math.round(i.grams * 1000) / 1000 }));
+    if (cleanItems.length === 0) return;
+    setBatches((b) => [...b, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, label, addedAt: new Date().toISOString(), items: cleanItems }]);
+  }
+  function removeBatch(id) { setBatches((b) => b.filter((x) => x.id !== id)); }
+  function clearAll() { setBatches([]); setChecked({}); setOverrides({}); }
+  function toggleChecked(name) { setChecked((c) => ({ ...c, [name]: !c[name] })); }
+  function setOverride(name, grams) { setOverrides((o) => ({ ...o, [name]: grams })); }
+
+  return (
+    <ShoppingListContext.Provider value={{ batches, addBatch, removeBatch, clearAll, checked, toggleChecked, overrides, setOverride }}>
+      {children}
+    </ShoppingListContext.Provider>
+  );
+}
+function AddToListButton({ label, items }) {
+  const list = useShoppingList();
+  const [added, setAdded] = useState(false);
+  if (!list) return null;
+  return (
+    <button
+      onClick={() => { list.addBatch(label, items); setAdded(true); setTimeout(() => setAdded(false), 1600); }}
+      style={{ padding: "10px 18px", borderRadius: 6, border: "none", background: added ? "#3E8E6E" : clay, color: "#fff", fontFamily: fontBody, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}
+    >
+      {added ? "✓ Added to shopping list" : "+ Add to shopping list"}
+    </button>
+  );
+}
+
 // ================= SHARED UI =================
 function PageTitle({ eyebrow, children, sub }) {
   return (
@@ -104,6 +163,7 @@ function volLabel(g) {
   if (tsp < 1) return `≈${tsp.toFixed(2)} tsp`;
   return `≈${tsp.toFixed(1)} tsp`;
 }
+function parseG(str) { const n = parseFloat(str); return isNaN(n) ? 0 : n; }
 function cumulativeMgWarning(magnesiumMgPerSachet, sachets) {
   const total = magnesiumMgPerSachet * sachets;
   if (total > 1600) return { text: `${total.toFixed(0)}mg magnesium across ${sachets.toFixed(1)} sachets — over the ~1,600mg threshold where laxative effect becomes a real risk.` };
@@ -280,6 +340,7 @@ function dailyBase() {
     { name: "Magnesium malate", mg: 200, el: "Mg", pct: PCT_ACTIVE.Mg_malate, role: "Highest dose in the range — daily use only" },
     { name: "Calcium carbonate", mg: 100, el: "Ca", pct: PCT_ACTIVE.Ca_carbonate, role: "Once-daily calcium" },
     { name: "Zinc citrate", mg: 5, el: "Zn", pct: PCT_ACTIVE.Zn_citrate, role: "Immune / recovery support" },
+    { name: "Coconut water powder", el: "trace", flatG: 2.0, role: "Trace minerals + natural background flavour — ~5mg Na, ~65mg K, ~5mg Ca at this dose. Not a primary electrolyte source." },
   ];
 }
 function raceBase(sodiumMg) {
@@ -291,6 +352,7 @@ function raceBase(sodiumMg) {
     { name: "Magnesium malate", mg: 80, el: "Mg", pct: PCT_ACTIVE.Mg_malate, role: "⚠️ Capped — cumulative safety over a long race" },
     { name: "Calcium carbonate", mg: 50, el: "Ca", pct: PCT_ACTIVE.Ca_carbonate, role: "Acute replacement" },
     { name: "Ginger extract (5% gingerols)", mg: 300, el: "extract", pct: 1, role: "⚠️ Standardised extract only — genuinely anti-nausea" },
+    { name: "Coconut water powder", el: "trace", flatG: 2.0, role: "Trace minerals + natural background flavour — ~5mg Na, ~65mg K, ~5mg Ca at this dose. Not a primary electrolyte source." },
   ];
 }
 
@@ -418,6 +480,10 @@ function CarbMixPage() {
 
   const electrolyteRows = withElectrolytes
     ? raceBase(raceSodiumMg).map((e) => {
+        if (e.el === "trace") {
+          const total = e.flatG * servings;
+          return { name: e.name, doseLabel: `${e.flatG}g/serve`, amount: `${total.toFixed(2)}g`, volume: volLabel(total), role: e.role, format: "Powder" };
+        }
         const compoundG = compoundGrams(e.mg, e.pct);
         const total = e.el === "extract" ? (e.mg / 1000) * servings : compoundG * servings;
         return { name: e.name, doseLabel: `${e.mg}mg ${e.el}/serve`, amount: `${total.toFixed(2)}g`, volume: volLabel(total), role: e.role, format: "Powder" };
@@ -532,6 +598,19 @@ function CarbMixPage() {
           "To mix a bottle: sprinkle powder ONTO water (never the reverse), shake hard 20s, rest 60s, shake again.",
         ].filter(Boolean)} />
       </Card>
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <AddToListButton
+          label={`Carb Mix — ${flavour} — ${batchG}g batch`}
+          items={[
+            ...baseRows,
+            ...(includeAntiClump ? antiClumpRows : []),
+            ...(withElectrolytes ? electrolyteRows : []),
+            ...(withCaffeine ? caffeineRows : []),
+            ...flavourRows,
+          ].map((r) => ({ name: r.name, grams: parseG(r.amount) }))}
+        />
+      </div>
     </div>
   );
 }
@@ -547,6 +626,10 @@ function ElectrolytesPage() {
 
   const base = type === "Daily" ? dailyBase() : raceBase(raceSodiumMg);
   const baseRows = base.map((e) => {
+    if (e.el === "trace") {
+      const total = e.flatG * servings;
+      return { name: e.name, doseLabel: `${e.flatG}g/sachet`, amount: `${total.toFixed(2)}g`, volume: volLabel(total), role: e.role, format: "Powder" };
+    }
     const compoundG = compoundGrams(e.mg, e.pct);
     const total = e.el === "extract" ? (e.mg / 1000) * servings : compoundG * servings;
     return { name: e.name, doseLabel: `${e.mg}mg ${e.el}`, amount: `${total.toFixed(2)}g`, volume: volLabel(total), role: e.role, format: "Powder" };
@@ -585,6 +668,12 @@ function ElectrolytesPage() {
       <Card title="Mixing instructions">
         <MethodSteps steps={["Weigh all base minerals into a bowl. Milligram-scale precision matters for piperine and any capped ingredient.", "Add the flavour ingredients and whisk thoroughly.", "Sieve the finished blend to break up any clumps.", "Portion into individual sachets by weight, not by scoop.", "To use: dissolve one sachet in 500ml water. Shake hard, rest 60s, shake again."]} />
       </Card>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <AddToListButton
+          label={`Electrolytes — ${type} — ${flavour} — ${servings} sachets`}
+          items={[...baseRows, ...flavourRows].map((r) => ({ name: r.name, grams: parseG(r.amount) }))}
+        />
+      </div>
     </div>
   );
 }
@@ -613,6 +702,7 @@ function GelsPage() {
 
   const electrolytePerGel = (mg) => mg / 1000; // grams, using compound total per gel approx (see below split)
   const pfElectrolyteRows = withElectrolytes ? raceBase(raceSodiumMg).map((e) => {
+    if (e.el === "trace") return { name: e.name, doseLabel: `${e.flatG}g/gel`, amount: `${(e.flatG * numGels).toFixed(2)}g`, role: e.role, format: "Powder" };
     const compoundG = compoundGrams(e.mg, e.pct);
     const perGel = e.el === "extract" ? e.mg / 1000 : compoundG;
     return { name: e.name, doseLabel: `${e.mg}mg ${e.el}/gel`, amount: `${(perGel * numGels).toFixed(2)}g`, role: e.role, format: "Powder" };
@@ -648,6 +738,7 @@ function GelsPage() {
   const cmFlavourRows = (CARB_FLAVOURS[cmFlavour]?.ingredients || []).map((f) => ({ name: f.name, doseLabel: `${f.dose}g/100g powder`, amount: `${((cmTotalPowder * f.dose) / 100).toFixed(2)}g`, role: f.role, format: f.format }));
 
   const cmElectrolytePerGel = withElectrolytes ? raceBase(raceSodiumMg).map((e) => {
+    if (e.el === "trace") return { name: e.name, doseLabel: `${e.flatG}g/gel`, amount: `${(e.flatG * numGels).toFixed(2)}g`, role: e.role, format: "Powder" };
     const compoundG = compoundGrams(e.mg, e.pct);
     const perGel = e.el === "extract" ? e.mg / 1000 : compoundG;
     return { name: e.name, doseLabel: `${e.mg}mg ${e.el}/gel`, amount: `${(perGel * numGels).toFixed(2)}g`, role: e.role, format: "Powder" };
@@ -698,6 +789,17 @@ function GelsPage() {
           <Card title="Mixing instructions">
             <MethodSteps steps={["Warm the rice syrup and agave together gently to ~40°C — pourable, not caramelising.", "Fold in the flavour's fruit powder(s) and acid blend while warm.", withElectrolytes ? "Stir in the electrolyte premix." : null, withCaffeine ? "Weigh caffeine and theanine precisely and stir in." : null, "Stir in the ascorbic acid last, off the heat.", "Fill into narrow foil stick packs or a reusable soft flask while still warm.", "Cool fully before sealing or capping."].filter(Boolean)} />
           </Card>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <AddToListButton
+              label={`PureFruit Gel — ${flavour} — ${numGels} gels`}
+              items={[
+                ...pfBaseRows,
+                ...(withElectrolytes ? pfElectrolyteRows : []),
+                ...(withCaffeine ? pfCaffeineRows : []),
+                ...pfFlavourRows,
+              ].map((r) => ({ name: r.name, grams: parseG(r.amount) }))}
+            />
+          </div>
         </>
       )}
 
@@ -743,6 +845,18 @@ function GelsPage() {
           <Card title="Mixing instructions">
             <MethodSteps steps={["Sieve the pectin, calcium lactate, lecithin and silicon dioxide together, whisk into a small portion of the maltodextrin first.", "Weigh the remaining maltodextrin, fructose and ascorbic acid, add the pre-mix, whisk until uniform.", withElectrolytes ? "Add the electrolyte ingredients and whisk in." : null, withCaffeine ? "Weigh caffeine and theanine precisely and whisk in." : null, "Add the flavour ingredients.", "Measure the water into a bowl first, sprinkle the powder onto it while stirring — never the reverse.", "Stir 60 seconds until smooth, then rest 4 minutes untouched — this is when the pectin cross-links with the calcium.", "Load into a flask, seal, stand upright 5 minutes, then refrigerate overnight before use."].filter(Boolean)} />
           </Card>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <AddToListButton
+              label={`Carb Mix Gel — ${cmFlavour} — ${numGels} gels`}
+              items={[
+                { name: "Water (for mixing, not shopping)", grams: 0 },
+                ...gelSpecificRows,
+                ...(withElectrolytes ? cmElectrolytePerGel : []),
+                ...(withCaffeine ? cmCaffeineRows : []),
+                ...cmFlavourRows,
+              ].map((r) => ({ name: r.name, grams: parseG(r.amount) })).filter((r) => r.name !== "Water (for mixing, not shopping)")}
+            />
+          </div>
         </>
       )}
     </div>
@@ -815,6 +929,12 @@ function BarsPage() {
               <h4 style={{ fontFamily: fontDisplay, fontSize: 15, color: teal, margin: "0 0 12px 0" }}>Method</h4>
               <MethodSteps steps={bar.method} />
             </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <AddToListButton
+                label={`${name} — ${s.count} bar(s) @ ${s.targetCarbs}g carbs`}
+                items={rows.map((r) => ({ name: r.name, grams: parseG(r.amount) }))}
+              />
+            </div>
           </Accordion>
         );
       })}
@@ -871,6 +991,7 @@ function RaceDayPage() {
   const magWarning = withElectrolytes ? cumulativeMgWarning(80, hours) : null;
 
   const electrolyteHourRows = withElectrolytes ? raceBase(raceSodiumMg).map((e) => {
+    if (e.el === "trace") return { name: e.name, doseLabel: `${e.flatG}g/hr`, amount: `${(e.flatG * hours).toFixed(2)}g total`, role: e.role, format: `${e.flatG.toFixed(2)}g/hr` };
     const compoundG = compoundGrams(e.mg, e.pct);
     const perHr = e.el === "extract" ? e.mg / 1000 : compoundG;
     return { name: e.name, doseLabel: `${e.mg}mg ${e.el}/hr`, amount: `${(perHr * hours).toFixed(2)}g total`, role: e.role, format: `${perHr.toFixed(2)}g/hr` };
@@ -994,6 +1115,154 @@ function RaceDayPage() {
 }
 function Num({ children }) { return <span style={{ fontFamily: fontMono, fontWeight: 700 }}>{children}</span>; }
 
+// ================= PAGE: SHOPPING LIST =================
+function ShoppingListPage() {
+  const list = useShoppingList();
+  const [emailAddr, setEmailAddr] = useState("");
+
+  if (!list) return null;
+  const { batches, removeBatch, clearAll, checked, toggleChecked, overrides, setOverride } = list;
+
+  const summary = {};
+  batches.forEach((b) => {
+    b.items.forEach((it) => {
+      if (!summary[it.name]) summary[it.name] = { name: it.name, total: 0, usedIn: [] };
+      summary[it.name].total += it.grams;
+      if (!summary[it.name].usedIn.includes(b.label)) summary[it.name].usedIn.push(b.label);
+    });
+  });
+  const summaryRows = Object.values(summary).sort((a, b) => a.name.localeCompare(b.name));
+
+  function effectiveAmount(name, calculated) {
+    return overrides[name] !== undefined ? overrides[name] : Math.round(calculated * 100) / 100;
+  }
+
+  function buildListText() {
+    const lines = ["POLAR ENDURANCE — SHOPPING LIST", ""];
+    summaryRows.forEach((row) => {
+      const amt = effectiveAmount(row.name, row.total);
+      lines.push(`${checked[row.name] ? "[x]" : "[ ]"} ${row.name}: ${amt}g`);
+    });
+    lines.push("", `Compiled from ${batches.length} recipe${batches.length === 1 ? "" : "s"} added in the app.`);
+    return lines.join("\n");
+  }
+
+  function exportCsv() {
+    const rows = [["Ingredient", "Total (g)", "Purchased", "Used in"]];
+    summaryRows.forEach((row) => {
+      const amt = effectiveAmount(row.name, row.total);
+      rows.push([row.name, amt, checked[row.name] ? "Yes" : "No", row.usedIn.join(" | ")]);
+    });
+    const csv = rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `polar-endurance-shopping-list-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function emailList() {
+    const subject = encodeURIComponent("Polar Endurance — Shopping List");
+    const body = encodeURIComponent(buildListText() + "\n\n(Attach the exported CSV for a spreadsheet version — email links can't attach files automatically.)");
+    window.location.href = `mailto:${emailAddr}?subject=${subject}&body=${body}`;
+  }
+
+  return (
+    <div>
+      <PageTitle eyebrow="Step 7" sub="Build recipes on the other pages and click 'Add to shopping list' — they collect here, aggregated into one order. Adjust any total by hand, tick items off as you buy them, export to Excel, or email the list to yourself.">
+        Shopping List
+      </PageTitle>
+
+      {batches.length === 0 && (
+        <Card>
+          <p style={{ fontFamily: fontBody, fontSize: 14.5, color: charcoal, margin: 0 }}>
+            Nothing added yet. Go to Carb Mix, Electrolytes, Gels, or Bars, dial in your batch, and click
+            <strong> + Add to shopping list</strong> at the bottom of the page — it'll show up here.
+          </p>
+        </Card>
+      )}
+
+      {batches.length > 0 && (
+        <>
+          <Card title="Order summary — aggregated across everything you've added">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead>
+                <tr>
+                  {["✓", "Ingredient", "Total needed", "Used in"].map((h, i) => (
+                    <th key={i} style={{ textAlign: "left", padding: "8px 10px", borderBottom: `2px solid ${teal}`, color: teal, fontFamily: fontBody, fontWeight: 600, fontSize: 12 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {summaryRows.map((row, i) => {
+                  const isChecked = !!checked[row.name];
+                  return (
+                    <tr key={row.name} style={{ background: isChecked ? "#E4EEE9" : i % 2 === 0 ? paper : "#fff" }}>
+                      <td style={{ padding: "9px 10px", borderBottom: `1px solid ${line}` }}>
+                        <input type="checkbox" checked={isChecked} onChange={() => toggleChecked(row.name)} style={{ width: 18, height: 18, cursor: "pointer" }} />
+                      </td>
+                      <td style={{ padding: "9px 10px", borderBottom: `1px solid ${line}`, fontFamily: fontBody, fontWeight: 600, fontSize: 13.5, color: isChecked ? muted : charcoal, textDecoration: isChecked ? "line-through" : "none" }}>{row.name}</td>
+                      <td style={{ padding: "9px 10px", borderBottom: `1px solid ${line}` }}>
+                        <input
+                          type="number"
+                          value={effectiveAmount(row.name, row.total)}
+                          onChange={(e) => setOverride(row.name, Number(e.target.value) || 0)}
+                          style={{ width: 90, padding: "6px 8px", border: `1px solid ${line}`, borderRadius: 4, fontFamily: fontMono, fontSize: 13.5, color: teal, background: paper }}
+                        />
+                        <span style={{ fontFamily: fontMono, fontSize: 12.5, color: muted, marginLeft: 6 }}>g</span>
+                      </td>
+                      <td style={{ padding: "9px 10px", borderBottom: `1px solid ${line}`, fontFamily: fontBody, fontSize: 12, color: muted }}>{row.usedIn.join(", ")}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Card>
+
+          <Card title="Export & share">
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <button onClick={exportCsv} style={{ padding: "12px 20px", borderRadius: 6, border: "none", background: teal, color: "#fff", fontFamily: fontBody, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                ↓ Export to Excel (CSV)
+              </button>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <div>
+                  <label style={{ fontSize: 12.5, color: teal, fontFamily: fontBody, fontWeight: 600, display: "block", marginBottom: 6 }}>Email address</label>
+                  <input type="email" placeholder="you@example.com" value={emailAddr} onChange={(e) => setEmailAddr(e.target.value)} style={{ width: 220, padding: "10px 12px", border: `1px solid ${line}`, borderRadius: 4, fontFamily: fontBody, fontSize: 14 }} />
+                </div>
+                <button onClick={emailList} disabled={!emailAddr} style={{ padding: "12px 20px", borderRadius: 6, border: "none", background: emailAddr ? clay : line, color: "#fff", fontFamily: fontBody, fontSize: 14, fontWeight: 600, cursor: emailAddr ? "pointer" : "not-allowed" }}>
+                  ✉ Email this list
+                </button>
+              </div>
+            </div>
+            <p style={{ fontFamily: fontBody, fontSize: 12, color: muted, marginTop: 12, marginBottom: 0, fontStyle: "italic" }}>
+              Email opens your own email app with the list pre-filled — it can't attach the CSV automatically, so export it first and attach it yourself if you want the spreadsheet version too.
+            </p>
+          </Card>
+
+          <Card title="What's been added">
+            {batches.map((b) => (
+              <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${line}` }}>
+                <div>
+                  <div style={{ fontFamily: fontBody, fontSize: 13.5, fontWeight: 600, color: charcoal }}>{b.label}</div>
+                  <div style={{ fontFamily: fontBody, fontSize: 11.5, color: muted }}>{b.items.length} ingredients</div>
+                </div>
+                <button onClick={() => removeBatch(b.id)} style={{ padding: "6px 12px", borderRadius: 4, border: `1px solid ${line}`, background: "transparent", color: clay, fontFamily: fontBody, fontSize: 12.5, cursor: "pointer" }}>Remove</button>
+              </div>
+            ))}
+            <div style={{ marginTop: 16 }}>
+              <button onClick={clearAll} style={{ padding: "8px 16px", borderRadius: 6, border: `1px solid ${clay}`, background: "transparent", color: clay, fontFamily: fontBody, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Clear entire list</button>
+            </div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ================= NAV + APP SHELL =================
 const NAV = [
   { id: "carbmix", label: "1 · Carb Mix" },
@@ -1002,14 +1271,16 @@ const NAV = [
   { id: "bars", label: "4 · Bars" },
   { id: "flavours", label: "5 · All Flavours" },
   { id: "raceday", label: "6 · Race Day" },
+  { id: "shoppinglist", label: "7 · Shopping List" },
 ];
-const PAGES = { carbmix: CarbMixPage, electrolytes: ElectrolytesPage, gels: GelsPage, bars: BarsPage, flavours: AllFlavoursPage, raceday: RaceDayPage };
+const PAGES = { carbmix: CarbMixPage, electrolytes: ElectrolytesPage, gels: GelsPage, bars: BarsPage, flavours: AllFlavoursPage, raceday: RaceDayPage, shoppinglist: ShoppingListPage };
 
 export default function PolarEnduranceApp() {
   const [active, setActive] = useState("carbmix");
   const [mobileOpen, setMobileOpen] = useState(false);
   const Page = PAGES[active];
   return (
+    <ShoppingListProvider>
     <div style={{ minHeight: "100vh", background: paper, fontFamily: fontBody, display: "flex" }}>
       <style>{`
         input:focus { outline: 2px solid ${clay}; outline-offset: 1px; }
@@ -1042,5 +1313,6 @@ export default function PolarEnduranceApp() {
         <div style={{ padding: "48px 56px", maxWidth: 940 }}><Page /></div>
       </div>
     </div>
+    </ShoppingListProvider>
   );
 }
