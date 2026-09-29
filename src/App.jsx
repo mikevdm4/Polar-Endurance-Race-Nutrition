@@ -53,9 +53,12 @@ function ShoppingListProvider({ children }) {
   function clearAll() { setBatches([]); setChecked({}); setOverrides({}); }
   function toggleChecked(name) { setChecked((c) => ({ ...c, [name]: !c[name] })); }
   function setOverride(name, grams) { setOverrides((o) => ({ ...o, [name]: grams })); }
+  function updateItemGrams(batchId, itemName, grams) {
+    setBatches((bs) => bs.map((b) => (b.id !== batchId ? b : { ...b, items: b.items.map((it) => (it.name === itemName ? { ...it, grams } : it)) })));
+  }
 
   return (
-    <ShoppingListContext.Provider value={{ batches, addBatch, removeBatch, clearAll, checked, toggleChecked, overrides, setOverride }}>
+    <ShoppingListContext.Provider value={{ batches, addBatch, removeBatch, clearAll, checked, toggleChecked, overrides, setOverride, updateItemGrams }}>
       {children}
     </ShoppingListContext.Provider>
   );
@@ -1121,7 +1124,7 @@ function ShoppingListPage() {
   const [emailAddr, setEmailAddr] = useState("");
 
   if (!list) return null;
-  const { batches, removeBatch, clearAll, checked, toggleChecked, overrides, setOverride } = list;
+  const { batches, removeBatch, clearAll, checked, toggleChecked, overrides, setOverride, updateItemGrams } = list;
 
   const summary = {};
   batches.forEach((b) => {
@@ -1188,6 +1191,37 @@ function ShoppingListPage() {
 
       {batches.length > 0 && (
         <>
+          <Card title="What's been added — edit any amount directly">
+            <p style={{ fontFamily: fontBody, fontSize: 13, color: muted, marginTop: 0, marginBottom: 16 }}>Each recipe you added, broken out by ingredient. Change any gram amount here and it feeds straight into the order summary below.</p>
+            {batches.map((b) => (
+              <div key={b.id} style={{ marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${line}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ fontFamily: fontDisplay, fontSize: 15.5, fontWeight: 600, color: teal }}>{b.label}</div>
+                  <button onClick={() => removeBatch(b.id)} style={{ padding: "6px 12px", borderRadius: 4, border: `1px solid ${line}`, background: "transparent", color: clay, fontFamily: fontBody, fontSize: 12.5, cursor: "pointer" }}>Remove</button>
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+                  <tbody>
+                    {b.items.map((it) => (
+                      <tr key={it.name}>
+                        <td style={{ padding: "6px 10px 6px 0", fontFamily: fontBody, color: charcoal }}>{it.name}</td>
+                        <td style={{ padding: "6px 0", textAlign: "right" }}>
+                          <input
+                            type="number"
+                            value={it.grams}
+                            onChange={(e) => updateItemGrams(b.id, it.name, Number(e.target.value) || 0)}
+                            style={{ width: 90, padding: "6px 8px", border: `1px solid ${line}`, borderRadius: 4, fontFamily: fontMono, fontSize: 13, color: teal, background: paper, textAlign: "right" }}
+                          />
+                          <span style={{ fontFamily: fontMono, fontSize: 12.5, color: muted, marginLeft: 6 }}>g</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            <button onClick={clearAll} style={{ padding: "8px 16px", borderRadius: 6, border: `1px solid ${clay}`, background: "transparent", color: clay, fontFamily: fontBody, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Clear entire list</button>
+          </Card>
+
           <Card title="Order summary — aggregated across everything you've added">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
@@ -1221,6 +1255,7 @@ function ShoppingListPage() {
                 })}
               </tbody>
             </table>
+            <p style={{ fontFamily: fontBody, fontSize: 12, color: muted, marginTop: 12, marginBottom: 0, fontStyle: "italic" }}>Editing a total here is a one-off override for this ingredient's grand total. To adjust one specific recipe's contribution instead, edit it directly in "What's been added" above.</p>
           </Card>
 
           <Card title="Export & share">
@@ -1241,21 +1276,6 @@ function ShoppingListPage() {
             <p style={{ fontFamily: fontBody, fontSize: 12, color: muted, marginTop: 12, marginBottom: 0, fontStyle: "italic" }}>
               Email opens your own email app with the list pre-filled — it can't attach the CSV automatically, so export it first and attach it yourself if you want the spreadsheet version too.
             </p>
-          </Card>
-
-          <Card title="What's been added">
-            {batches.map((b) => (
-              <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${line}` }}>
-                <div>
-                  <div style={{ fontFamily: fontBody, fontSize: 13.5, fontWeight: 600, color: charcoal }}>{b.label}</div>
-                  <div style={{ fontFamily: fontBody, fontSize: 11.5, color: muted }}>{b.items.length} ingredients</div>
-                </div>
-                <button onClick={() => removeBatch(b.id)} style={{ padding: "6px 12px", borderRadius: 4, border: `1px solid ${line}`, background: "transparent", color: clay, fontFamily: fontBody, fontSize: 12.5, cursor: "pointer" }}>Remove</button>
-              </div>
-            ))}
-            <div style={{ marginTop: 16 }}>
-              <button onClick={clearAll} style={{ padding: "8px 16px", borderRadius: 6, border: `1px solid ${clay}`, background: "transparent", color: clay, fontFamily: fontBody, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Clear entire list</button>
-            </div>
           </Card>
         </>
       )}
