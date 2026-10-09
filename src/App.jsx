@@ -1115,6 +1115,7 @@ function BarsPage() {
         const wheyPerBar = bar.wheyBar ? s.targetCarbs / proteinN / 0.8 : 0;
         if (bar.wheyBar) rows.push({ name: "Vanilla whey protein powder", doseLabel: `${fmtG(wheyPerBar)}g / bar at ${s.proteinRatio}`, amount: `${fmtG(wheyPerBar * s.count)}g`, role: `Sets carbs:protein at ${s.proteinRatio} (assumes 80% protein). Add after the syrup cools.`, format: "Powder" });
         if (bar.wheyOk && s.wheyOn) rows.push({ name: "Vanilla whey protein powder", doseLabel: `${fmtG(s.wheyG)}g / bar`, amount: `${fmtG(s.wheyG * s.count)}g`, role: "Optional protein. Not scaled with carbs. Add dry, after the syrup has cooled.", format: "Powder" });
+        if (bar.wheyOk && s.wheyOn && s.wheyG > 10) rows.push({ name: "Extra binder (rice syrup or nut butter)", doseLabel: `${fmtG((s.wheyG - 10) * 0.4)}g / bar`, amount: `${fmtG((s.wheyG - 10) * 0.4 * s.count)}g`, role: "Estimate only: high whey dries the dough out. Add as needed, adds some carbs.", format: "Syrup / spread" });
         const wheyMethod = bar.wheyOk && s.wheyOn ? [`Whey: whisk the ${fmtG(s.wheyG)}g per bar of vanilla whey into the dry ingredients, or fold it in once the syrup or caramel has cooled below about 60°C. Hot syrup can make whey clump. If the dough turns dry or crumbly, work in a teaspoon of warm water or rice syrup at a time.`] : [];
 
         return (
@@ -1148,9 +1149,11 @@ function BarsPage() {
                 <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
                   <Pill active={!s.wheyOn} onClick={() => updateSetting(name, { wheyOn: false })}>No</Pill>
                   <Pill active={s.wheyOn} onClick={() => updateSetting(name, { wheyOn: true })}>Yes</Pill>
+                  {s.wheyOn && <Pill active={s.wheyG === 12.5} onClick={() => updateSetting(name, { wheyG: 12.5 })}>10g protein</Pill>}
+                  {s.wheyOn && <Pill active={s.wheyG === 25} onClick={() => updateSetting(name, { wheyG: 25 })}>20g protein</Pill>}
                   {s.wheyOn && <NumberInput label="Whey per bar (g)" value={s.wheyG} onChange={(v) => updateSetting(name, { wheyG: v })} width={150} hint={`about ${fmtG(s.wheyG * 0.8)}g protein per bar (assumes 80% protein)`} />}
                 </div>
-                {s.wheyOn && <p style={{ fontFamily: fontBody, fontSize: 12, color: muted, fontStyle: "italic", margin: "8px 0 0 0" }}>5-10g suits a snack bar, 15-20g a recovery bar. Not for race bars: protein slows gastric emptying. Contains milk. Starting amounts, not tested against these recipes.</p>}
+                {s.wheyOn && <p style={{ fontFamily: fontBody, fontSize: 12, color: muted, fontStyle: "italic", margin: "8px 0 0 0" }}>Presets: 10g protein = 12.5g whey, 20g protein = 25g whey. 20g protein is a big load of whey in one bar: it comes out drier, chalkier and heavier, so expect to add binder. Not for race bars: protein slows gastric emptying. Contains milk. Starting amounts, not tested against these recipes.</p>}
               </div>
             )}
             {bar.hasElectrolyte && (
