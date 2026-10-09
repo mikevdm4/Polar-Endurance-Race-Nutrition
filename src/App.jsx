@@ -1072,10 +1072,64 @@ function GelsPage() {
 }
 
 // ================= PAGE: BARS =================
+// ================= MACROS (typical label values per 1g of ingredient, estimates) =================
+// c = carbs, p = protein, f = fat, fr = share of the carbs that reaches the gut as fructose (rest counts as glucose route).
+const NUTR = [
+  [/maltodextrin/i, { c: 0.95, p: 0, f: 0, fr: 0 }],
+  [/^fructose/i, { c: 1.0, p: 0, f: 0, fr: 1 }],
+  [/rice syrup \+ light brown sugar/i, { c: 0.8, p: 0, f: 0, fr: 0.125 }],
+  [/rice syrup|extra binder/i, { c: 0.75, p: 0, f: 0, fr: 0 }],
+  [/agave/i, { c: 0.76, p: 0, f: 0, fr: 0.7 }],
+  [/honey/i, { c: 0.82, p: 0, f: 0, fr: 0.46 }],
+  [/brown sugar|cane sugar/i, { c: 0.98, p: 0, f: 0, fr: 0.5 }],
+  [/whey/i, { c: 0.06, p: 0.8, f: 0.05, fr: 0 }],
+  [/egg white/i, { c: 0.05, p: 0.8, f: 0, fr: 0 }],
+  [/oats/i, { c: 0.66, p: 0.13, f: 0.07, fr: 0 }],
+  [/rice flour/i, { c: 0.8, p: 0.07, f: 0.01, fr: 0 }],
+  [/peanut butter/i, { c: 0.12, p: 0.25, f: 0.5, fr: 0 }],
+  [/almond butter/i, { c: 0.1, p: 0.21, f: 0.55, fr: 0 }],
+  [/walnut/i, { c: 0.07, p: 0.15, f: 0.65, fr: 0 }],
+  [/coconut oil|sunflower oil/i, { c: 0, p: 0, f: 1, fr: 0 }],
+  [/lecithin/i, { c: 0, p: 0, f: 1, fr: 0 }],
+  [/cocoa/i, { c: 0.25, p: 0.2, f: 0.11, fr: 0 }],
+  [/chocolate/i, { c: 0.45, p: 0.06, f: 0.35, fr: 0.3 }],
+  [/coconut milk powder/i, { c: 0.3, p: 0.06, f: 0.55, fr: 0 }],
+  [/lime juice powder|lemon juice powder/i, { c: 0.75, p: 0.02, f: 0, fr: 0.1 }],
+  [/orange peel/i, { c: 0.3, p: 0.05, f: 0.01, fr: 0.3 }],
+  [/banana/i, { c: 0.88, p: 0.04, f: 0.01, fr: 0.4 }],
+  [/raspberry|strawberry/i, { c: 0.65, p: 0.04, f: 0.01, fr: 0.5 }],
+  [/cherry/i, { c: 0.85, p: 0.04, f: 0.01, fr: 0.45 }],
+  [/apple|mango|pineapple|orange|fruit powder/i, { c: 0.85, p: 0.03, f: 0.01, fr: 0.5 }],
+];
+function nutrFor(name) { const hit = NUTR.find(([re]) => re.test(name)); return hit ? hit[1] : { c: 0, p: 0, f: 0, fr: 0 }; }
+function computeMacros(rows, count) {
+  const per = Math.max(count, 1);
+  const lines = rows.map((r) => {
+    const g = parseG(r.amount) / per; // grams per bar
+    const n = nutrFor(r.name);
+    const carbs = g * n.c;
+    return { name: r.name, g, carbs, fructose: carbs * n.fr, glucose: carbs * (1 - n.fr), protein: g * n.p, fat: g * n.f };
+  });
+  const sum = (k) => lines.reduce((a, l) => a + l[k], 0);
+  const t = { carbs: sum("carbs"), protein: sum("protein"), fat: sum("fat"), glucose: sum("glucose"), fructose: sum("fructose") };
+  t.kcal = t.carbs * 4 + t.protein * 4 + t.fat * 9;
+  return { lines, perBar: t };
+}
+function pathwayVerdict(glu, fru) {
+  if (glu + fru < 1) return "Almost no carbs";
+  if (fru < 0.5) return "Glucose route only. Fine under about 60g/hr, but there's no fructose to add on top.";
+  const ratio = glu / fru;
+  if (ratio >= 1.7 && ratio <= 2.4) return "Close to 2:1 (up to about 90g/hr).";
+  if (ratio >= 1.0 && ratio < 1.7) return "In the 1:0.8 to 1.5:1 range (more fructose than 2:1, aimed at 90-120g/hr). Check gut tolerance.";
+  if (ratio < 1.0) return "Fructose-heavy (more fructose than glucose). Likely to upset the gut at high rates.";
+  return "Glucose-heavy (above 2:1). Fine, but it uses less of the fructose pathway.";
+}
+
 function BarsPage() {
   const [openCategory, setOpenCategory] = useState("Race");
   const [openBar, setOpenBar] = useState(null);
   const { acid } = useAcid();
+  const [macroOpen, setMacroOpen] = useState({});
   const [settings, setSettings] = useState({}); // { barName: { count, targetCarbs, ratio, includeElectrolyte } }
 
   function getSettings(name, bar) {
@@ -1165,7 +1219,44 @@ function BarsPage() {
                 </div>
               </div>
             )}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+              <Pill active={!!macroOpen[name]} onClick={() => setMacroOpen((m) => ({ ...m, [name]: !m[name] }))}>{macroOpen[name] ? "Hide macros and carb split" : "Show macros and carb split"}</Pill>
+            </div>
             <div style={{ marginBottom: 20 }}><IngredientTable rows={rows} /></div>
+            {macroOpen[name] && (() => {
+              const mac = computeMacros(rows, s.count);
+              const b = mac.perBar, k = Math.max(s.count, 1);
+              const f1 = (x) => x.toFixed(1);
+              const th = { textAlign: "left", padding: "6px 8px", borderBottom: `1px solid ${line}`, color: teal, fontWeight: 600 };
+              const td = { padding: "6px 8px", borderBottom: `1px solid ${line}` };
+              const ratioTxt = b.fructose >= 0.5 ? `${(b.glucose / b.fructose).toFixed(1)} : 1` : "no fructose";
+              return (
+                <div style={{ border: `1px solid ${line}`, borderRadius: 8, padding: 14, marginBottom: 20, fontFamily: fontBody, fontSize: 13 }}>
+                  <h4 style={{ fontFamily: fontDisplay, fontSize: 15, color: teal, margin: "0 0 10px 0" }}>Macros and carb split</h4>
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 14 }}>
+                    <thead><tr><th style={th}></th><th style={th}>Per bar</th><th style={th}>Total ({s.count} bar{s.count === 1 ? "" : "s"})</th></tr></thead>
+                    <tbody>
+                      <tr><td style={td}>Energy</td><td style={td}>{Math.round(b.kcal)} kcal</td><td style={td}>{Math.round(b.kcal * k)} kcal</td></tr>
+                      <tr><td style={td}>Carbohydrate</td><td style={td}>{f1(b.carbs)}g</td><td style={td}>{f1(b.carbs * k)}g</td></tr>
+                      <tr><td style={td}>Protein</td><td style={td}>{f1(b.protein)}g</td><td style={td}>{f1(b.protein * k)}g</td></tr>
+                      <tr><td style={td}>Fat</td><td style={td}>{f1(b.fat)}g</td><td style={td}>{f1(b.fat * k)}g</td></tr>
+                      <tr><td style={td}>Glucose route (maltodextrin, syrups, starch)</td><td style={td}>{f1(b.glucose)}g</td><td style={td}>{f1(b.glucose * k)}g</td></tr>
+                      <tr><td style={td}>Fructose route (fructose, agave, honey, fruit, sucrose half)</td><td style={td}>{f1(b.fructose)}g</td><td style={td}>{f1(b.fructose * k)}g</td></tr>
+                    </tbody>
+                  </table>
+                  <p style={{ margin: "0 0 12px 0", color: teal, fontWeight: 600 }}>Glucose : fructose = {ratioTxt}. {pathwayVerdict(b.glucose, b.fructose)}</p>
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 10 }}>
+                    <thead><tr><th style={th}>Ingredient</th><th style={th}>Carbs / bar</th><th style={th}>Glucose route</th><th style={th}>Fructose route</th></tr></thead>
+                    <tbody>
+                      {mac.lines.filter((l) => l.carbs > 0.05).map((l, i) => (
+                        <tr key={i}><td style={td}>{l.name}</td><td style={td}>{f1(l.carbs)}g</td><td style={td}>{f1(l.glucose)}g</td><td style={td}>{f1(l.fructose)}g</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p style={{ margin: 0, fontSize: 12, color: muted, fontStyle: "italic" }}>Estimated from typical label values for each ingredient, not lab-tested, so weigh a batch and check against your own labels. Calculated carbs can differ from the "{s.targetCarbs}g carbs" target. Fibre is not subtracted. Sucrose (brown sugar) counts as half glucose, half fructose. Lactose in whey counts on the glucose route.</p>
+                </div>
+              );
+            })()}
             <div>
               <h4 style={{ fontFamily: fontDisplay, fontSize: 15, color: teal, margin: "0 0 12px 0" }}>Method</h4>
               <MethodSteps steps={[...bar.method, ...wheyMethod]} />
