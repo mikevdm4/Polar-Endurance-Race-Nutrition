@@ -1198,6 +1198,7 @@ function BarsPage() {
 
       {Object.entries(BARS[openCategory]).map(([name, bar]) => {
         const s = getSettings(name, bar);
+        const { glucosePct, fructosePct } = bar.ratioAdjustable ? ratioSplit(s.ratio) : { glucosePct: null, fructosePct: null };
         const perBarAdj = applyAcidChoice(bar.perBar, acid, "g");
         const plan = planBar(bar, s, perBarAdj, glucosePct, fructosePct);
         const rows = plan.items.map((it) => ({ name: it.name, doseLabel: `${fmtG(it.g)}g / bar`, amount: `${fmtG(it.g * s.count)}g`, role: it.role, format: "—" }));
