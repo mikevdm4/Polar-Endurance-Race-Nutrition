@@ -188,13 +188,14 @@ const ACID_CHOICES = [
   { id: "none", label: "No added acid" },
 ];
 const ACID_HINTS = {
-  citric: "The standard acid across the whole app. Every flavour's malic acid is swapped for citric at ~1.1x the weight and merged with any citric already in that flavour. Citric is what Precision Fuel & Hydration, SiS gels and Amacx use. The 1.1x is an approximation for similar sourness, so taste it and adjust.",
+  citric: "The standard acid across the whole app. Every flavour's malic acid is swapped for citric at ~1.1x the weight and merged with any citric already in that flavour. Citric is what Precision Fuel & Hydration, SiS gels and Amacx use. The 1.1x is an approximation for similar sourness, so taste it and adjust. Carb mix drinks and the carb-mix gel then add a further 50%.",
   malic: "The original formulas with malic acid, for comparing against citric. By my calculation citric is no less acidic than malic (both sit around pH 2.7-2.8 unbuffered) — the difference is the character of the sourness, not how acidic it is.",
   half: "Citric at half the standard amount — a clean test of whether the amount of acid is the problem.",
   none: "No added acid. Fruit powders still carry some natural acid, so it won't be completely neutral. The SiS and Maurten drink mixes use none.",
 };
 const CITRIC_PER_MALIC = 1.1; // citric needs roughly 10% more by weight than malic for similar sourness (approximation)
-function applyAcidChoice(items, choice, field = "dose") {
+const CARBMIX_ACID_BOOST = 1.5; // carb mix drink and carb-mix gel: citric raised by 50%
+function applyAcidChoice(items, choice, field = "dose", boost = 1) {
   if (choice === "malic") return items;
   const isAcid = (i) => isMalicAcid(i.name) || isCitricAcid(i.name);
   if (choice === "none") return items.filter((i) => !isAcid(i));
@@ -202,10 +203,12 @@ function applyAcidChoice(items, choice, field = "dose") {
   const citricItems = items.filter((i) => isCitricAcid(i.name));
   const citricTotal = citricItems.reduce((s, i) => s + i[field], 0);
   const factor = choice === "half" ? 0.5 : 1;
-  const total = (citricTotal + malicTotal * CITRIC_PER_MALIC) * factor;
+  const total = (citricTotal + malicTotal * CITRIC_PER_MALIC) * factor * boost;
   const role =
     choice === "half"
       ? "★ Half dose for acid test — citric at half the standard amount"
+      : boost !== 1
+      ? `Acid — citric, raised ${Math.round((boost - 1) * 100)}% for the carb mix${malicTotal > 0 ? " (swapped from malic at ~1.1x first)" : ""}`
       : malicTotal > 0
       ? "Acid — citric (swapped from malic at ~1.1x the weight)"
       : citricItems[0]
@@ -291,11 +294,9 @@ const CARB_FLAVOURS = {
   "Neutral / Lemon": { category: "sweet", ingredients: [
     { name: "L-Malic acid", dose: 0.70, role: "The acid IS the flavour — soft, rounded", format: "Powder" },
     { name: "Lemon juice powder (optional)", dose: 0.20, role: "Very light citrus identity", format: "Powder" },
-    { name: "Stevia extract", dose: 0.03, role: "Minimal sweetness", format: "Powder" },
   ]},
   "Naked (no flavour)": { category: "sweet", ingredients: [
     { name: "L-Malic acid", dose: 0.50, role: "Prevents a flat taste", format: "Powder" },
-    { name: "Stevia extract", dose: 0.02, role: "Trace — less than any other variant", format: "Powder" },
   ]},
   "Mango & Orange": { category: "sweet", ingredients: [
     { name: "Freeze-dried mango powder", dose: 0.55, role: "Primary — sweetness-dominant", format: "Powder, no carrier" },
@@ -308,7 +309,6 @@ const CARB_FLAVOURS = {
     { name: "Lemon juice powder", dose: 0.90, role: "Primary — the assertive lead", format: "Powder, no carrier" },
     { name: "Citric acid", dose: 0.35, role: "PRIMARY acid — lemon is citric-dominant", format: "Powder" },
     { name: "L-Malic acid", dose: 0.20, role: "Sustained finish", format: "Powder" },
-    { name: "Stevia extract", dose: 0.02, role: "Trace — stops pure-sour fatigue", format: "Powder" },
   ]},
   "Coconut & Pineapple": { category: "sweet", ingredients: [
     { name: "Freeze-dried pineapple powder", dose: 0.70, role: "Primary flavour", format: "Powder, no carrier" },
@@ -444,35 +444,35 @@ function raceBase(sodiumMg) {
 // ================= DATA: BARS (now with defaultCarbs, ratioAdjustable, hasElectrolyte flags) =================
 const BARS = {
   Race: {
-    "Natural": { defaultCarbs: 35, hasElectrolyte: true, badge: "35g carbs default · lowest GI risk of the race set, but highest fibre — training bar", perBar: [
-      { name: "Rice syrup", g: 28, role: "Binder + primary carb" }, { name: "Low-fibre oats (quick oats)", g: 14, role: "Chew matrix" },
+    "Natural": { agaveOk: true, defaultCarbs: 35, hasElectrolyte: true, badge: "35g carbs default · lowest GI risk of the race set, but highest fibre — training bar", perBar: [
+      { name: "Rice syrup", g: 22, role: "Binder + primary carb" }, { name: "Low-fibre oats (quick oats)", g: 14, role: "Chew matrix" },
       { name: "Rice flour", g: 6, role: "Structure" }, { name: "Freeze-dried apple powder", g: 4, role: "Real flavour" },
       { name: "Sunflower oil", g: 3, role: "Texture" }, { name: "L-Malic acid", g: 0.5, role: "Cut sweetness" },
       { name: "Electrolyte premix (no Mg)", g: 1.5, role: "Sodium-forward", isElectrolyte: true }, { name: "Sunflower lecithin", g: 0.3, role: "Bind phases" },
     ], method: ["Weigh out every ingredient before you start — this dough firms up fast once combined, so there's no time to measure mid-process.", "Line a tray with a sheet of edible rice paper, cut slightly larger than the tray base — this stops the bar sticking and becomes part of its edible skin.", "Warm the rice syrup in a small pan over low heat to ~50°C — it should be pourable but not boiling. Take it off the heat.", "Toast the oats in a dry pan over medium heat for 3-4 minutes, stirring constantly, until lightly golden and smelling nutty. Tip into a bowl and cool for a few minutes.", "Pour the warm syrup over the toasted oats and stir until every oat is coated.", "Fold in the rice flour, apple powder, citric acid, electrolyte premix and lecithin. Keep folding until there are no dry pockets of powder left.", "If the mix is too stiff to bring together, work in the sunflower oil a teaspoon at a time — it should end up like a thick, slightly sticky cookie dough.", "Tip the mixture onto the rice-paper-lined tray. Press hard and evenly — a second sheet of rice paper on top lets you press with the flat of your hand without sticking to it — to an even ~1.5cm thickness.", "Chill for 2-3 hours, uncovered, until firm to the touch.", "Cut through the rice paper into bars with a sharp knife, wiping the blade clean between cuts for a neat edge. Wrap individually if not eating within a day or two."] },
     "Performance": { defaultCarbs: 44, hasElectrolyte: true, ratioAdjustable: true, badge: "44g carbs default · pick 1:0.8 or 2:1 · the direct Maurten analog", perBar: [
-      { name: "Rice syrup", g: 20, role: "Binder + carb" }, { name: "Maltodextrin", g: 13, role: "Carb payload", isMalto: true },
+      { name: "Rice syrup", g: 16.5, role: "Binder + carb" }, { name: "Maltodextrin", g: 13, role: "Carb payload", isMalto: true },
       { name: "Fructose", g: 10, role: "Carb payload", isFructose: true }, { name: "Low-fibre oats", g: 8, role: "Minimal chew matrix" },
       { name: "Rice flour", g: 4, role: "Structure" }, { name: "Sunflower oil", g: 2.5, role: "Texture" },
       { name: "L-Malic acid", g: 0.6, role: "Cuts Maurten-style sweetness" }, { name: "Electrolyte premix (no Mg)", g: 1.5, role: "Sodium-forward", isElectrolyte: true },
       { name: "Sunflower lecithin", g: 0.3, role: "Bind phases" },
     ], method: ["Weigh every ingredient before starting — once combined this dough sets quickly.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup in a small pan to ~50°C — pourable, not boiling. Remove from heat.", "In a separate bowl, whisk the maltodextrin, fructose, rice flour, citric acid, electrolyte premix and lecithin together until evenly blended — this prevents pockets of any one ingredient in the finished bar.", "Combine the warm syrup with the dry mix and the oats. Fold firmly and repeatedly until a stiff, uniform dough forms with no streaks of syrup or dry powder.", "If the dough won't come together, work in the sunflower oil a teaspoon at a time until it holds its shape without crumbling.", "Press the dough onto the rice-paper-lined tray, working it firmly into the corners, to an even ~1.5cm thickness.", "Chill for 2-3 hours until firm.", "Cut through the rice paper into bars, wrap individually, and store somewhere cool."] },
     "Hybrid": { defaultCarbs: 42, hasElectrolyte: true, ratioAdjustable: true, badge: "42g carbs default · pick 1:0.8 or 2:1 · best all-round chew", perBar: [
-      { name: "Rice syrup", g: 22, role: "Binder + carb" }, { name: "Maltodextrin", g: 9, role: "Carb payload", isMalto: true },
+      { name: "Rice syrup", g: 15, role: "Binder + carb" }, { name: "Maltodextrin", g: 9, role: "Carb payload", isMalto: true },
       { name: "Fructose", g: 7, role: "Carb payload", isFructose: true }, { name: "Low-fibre oats", g: 12, role: "Satisfying chew" },
       { name: "Rice flour", g: 5, role: "Structure" }, { name: "Freeze-dried apple powder", g: 3, role: "Real flavour" },
       { name: "Sunflower oil", g: 2.5, role: "Texture" }, { name: "L-Malic acid", g: 0.5, role: "Cut sweetness" },
       { name: "Electrolyte premix (no Mg)", g: 1.5, role: "Sodium-forward", isElectrolyte: true },
     ], method: ["Weigh every ingredient before starting.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup to ~50°C in a small pan — pourable, not boiling.", "Toast the oats in a dry pan over medium heat for 3-4 minutes until lightly golden, then cool for a few minutes.", "In a large bowl, combine the warm syrup, toasted oats, the dry maltodextrin/fructose mix, apple powder, citric acid and electrolyte premix.", "Fold everything together until a stiff, cohesive dough forms. If it won't hold together, work in the sunflower oil a teaspoon at a time.", "Press the dough hard onto the rice-paper-lined tray, ~1.5cm thick, pressing firmly into the edges.", "Chill for 2-3 hours until firm.", "Cut through the rice paper into bars, wrap and store cool."] },
     "Nougat — Original": { defaultCarbs: 40, hasElectrolyte: true, badge: "40g carbs default · fastest emptying · best choice for a sensitive gut", perBar: [
-      { name: "Rice syrup", g: 18, role: "Base syrup — whipped hot into whites" }, { name: "Honey (or extra rice syrup)", g: 10, role: "Traditional flavour + carbs" },
+      { name: "Rice syrup", g: 16, role: "Base syrup — whipped hot into whites" }, { name: "Honey (or extra rice syrup)", g: 10, role: "Traditional flavour + carbs" },
       { name: "Maltodextrin", g: 8, role: "Carb payload" }, { name: "Fructose", g: 6, role: "Carb payload" },
       { name: "Egg white powder (or aquafaba)", g: 3, role: "The aeration" }, { name: "Rice flour", g: 4, role: "Light structure" },
       { name: "Freeze-dried fruit powder", g: 3, role: "Flavour" }, { name: "L-Malic acid", g: 0.5, role: "Cut honey sweetness" },
       { name: "Electrolyte premix (no Mg)", g: 1.5, role: "Sodium-forward", isElectrolyte: true },
     ], method: ["Weigh everything and have two sheets of edible rice paper cut to the size of your tray before you begin — once the syrup is hot, this process moves fast and there's no time to prep mid-way.", "Line the tray with the first sheet of rice paper.", "Whip the rehydrated egg white powder (or aquafaba) in a stand mixer or with electric beaters to stiff, glossy peaks — it should hold its shape when you lift the beaters.", "Heat the rice syrup and honey together in a small pan with a sugar thermometer clipped to the side, to 120-130°C (the soft-ball stage). Don't stir once it's boiling — just watch the thermometer.", "With the mixer running on a medium speed, pour the hot syrup into the whipped whites in a thin, steady stream down the side of the bowl, avoiding the beaters. Keep whipping for 3-5 minutes until thick, glossy and holding soft peaks.", "Working quickly before it sets, fold in the maltodextrin, fructose, rice flour, electrolyte premix, citric acid and fruit powder by hand with a spatula.", "Spread the mixture onto the rice-paper-lined tray, lay the second sheet of rice paper on top, and press flat and even with a rolling pin or the base of a tray.", "Leave to set at room temperature for 4-6 hours. Do NOT refrigerate — cold temperatures make nougat go hard and can cause it to weep.", "Cut through both layers of rice paper into bars with a sharp, lightly oiled knife."] },
     "Nougat — Raspberry": { defaultCarbs: 40, hasElectrolyte: true, badge: "40g carbs default · same fast-emptying nougat base, tart berry lead", perBar: [
-      { name: "Rice syrup", g: 18, role: "Base syrup — whipped hot into whites" }, { name: "Honey (or extra rice syrup)", g: 10, role: "Traditional flavour + carbs" },
+      { name: "Rice syrup", g: 16.5, role: "Base syrup — whipped hot into whites" }, { name: "Honey (or extra rice syrup)", g: 10, role: "Traditional flavour + carbs" },
       { name: "Maltodextrin", g: 8, role: "Carb payload" }, { name: "Fructose", g: 6, role: "Carb payload" },
       { name: "Egg white powder (or aquafaba)", g: 3, role: "The aeration" }, { name: "Rice flour", g: 4, role: "Light structure" },
       { name: "Freeze-dried raspberry powder", g: 3.5, role: "Tart lead flavour" }, { name: "L-Malic acid", g: 0.4, role: "Raspberry is already tart — slightly less than the original" },
@@ -480,62 +480,62 @@ const BARS = {
     ], method: ["Weigh everything and have two sheets of edible rice paper cut to the size of your tray before you begin.", "Line the tray with the first sheet of rice paper.", "Whip the rehydrated egg white powder (or aquafaba) to stiff, glossy peaks.", "Heat the rice syrup and honey together with a sugar thermometer to 120-130°C (soft-ball stage), without stirring once boiling.", "With the mixer running, pour the hot syrup into the whites in a thin stream down the side of the bowl. Whip 3-5 minutes until thick and glossy.", "Working quickly, fold in the maltodextrin, fructose, rice flour, electrolyte premix, citric acid and raspberry powder by hand.", "Spread onto the rice-paper-lined tray, top with the second sheet of rice paper, and press flat and even.", "Set at room temperature 4-6 hours — do NOT refrigerate.", "Cut through both layers of rice paper into bars with a sharp, lightly oiled knife."] },
   },
   "Training & Recovery": {
-    "Peanut Butter & Jam": { wheyOk: true, defaultCarbs: 33, hasElectrolyte: false, badge: "The universal crowd-pleaser — real fruit, real peanut butter", perBar: [
-      { name: "Peanut butter (smooth)", g: 20, role: "Primary flavour + fat + protein" }, { name: "Rice syrup", g: 18, role: "Binder" },
+    "Peanut Butter & Jam": { agaveOk: true, wheyOk: true, defaultCarbs: 33, hasElectrolyte: false, badge: "The universal crowd-pleaser — real fruit, real peanut butter", perBar: [
+      { name: "Peanut butter (smooth)", g: 20, role: "Primary flavour + fat + protein" }, { name: "Rice syrup", g: 21.5, role: "Binder" },
       { name: "Quick oats", g: 12, role: "Texture" }, { name: "Freeze-dried raspberry or strawberry powder", g: 4, role: "The 'jam' layer" },
       { name: "Rice flour", g: 4, role: "Structure" }, { name: "Himalayan salt", g: 0.4, role: "Classic salty-peanut lift" },
     ], method: ["Weigh out every ingredient before starting — this dough firms as it cools, so work efficiently once mixing begins.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup gently in a small pan, then stir in the peanut butter until completely smooth and glossy — don't let it boil.", "Toast the oats in a dry pan for 2-3 minutes until lightly golden, then cool briefly before folding into the peanut butter mixture along with the rice flour and salt.", "Press half of the mixture into the rice-paper-lined tray in an even layer, about 0.7cm thick.", "Mix the freeze-dried fruit powder with 1-2 teaspoons of warm water to form a thick, spreadable paste — this becomes the jam layer.", "Spread the fruit paste evenly over the base layer, leaving a small border around the edges.", "Top with the remaining peanut butter mixture, pressing down firmly around the edges to seal the jam layer inside completely.", "Chill for at least 1 hour until firm.", "Cut through the rice paper into bars with a sharp knife."] },
     "Salted Caramel": { wheyOk: true, defaultCarbs: 36, hasElectrolyte: false, badge: "Same browning trick as the waffle — real caramel, nothing added", perBar: [
-      { name: "Rice syrup + light brown sugar", g: 27, role: "The caramel — cooked to light amber (raised to replace the pretzel carbs)" },
+      { name: "Rice syrup + light brown sugar", g: 28.5, role: "The caramel — cooked to light amber (raised to replace the pretzel carbs)" },
       { name: "Quick oats", g: 14, role: "Structure (raised to replace the pretzel bulk)" }, { name: "Rice flour", g: 4, role: "Structure" },
       { name: "Himalayan salt (extra)", g: 0.8, role: "Salted caramel is salt-forward" }, { name: "Vanilla", g: 0.2, role: "Rounds the caramel" },
     ], method: ["Weigh everything before you start the caramel — once it hits temperature, this moves fast and there's no time to prep.", "Line a tray with edible rice paper, cut to size.", "Combine the rice syrup and brown sugar in a small, heavy-based pan over medium heat. Clip a sugar thermometer to the side and cook, without stirring, to 118-120°C — a light amber colour, not dark.", "Watch closely in the final 30 seconds — caramel can darken from light amber to burnt very quickly once it's near temperature.", "The moment it hits 118-120°C, remove the pan from the heat immediately. Stir in the vanilla and salt — it will bubble up, that's normal.", "Working quickly before the caramel starts to set, fold in the oats and rice flour with a wooden spoon or heatproof spatula.", "While still warm and workable, press the mixture onto the rice-paper-lined tray to an even ~1.5cm thickness — it will firm up fast, so don't delay.", "Leave to cool and set fully at room temperature, then chill for at least 1 hour for a cleaner cut.", "Cut through the rice paper into bars with a sharp knife, warming the blade under hot water if the caramel resists cutting cleanly."] },
-    "Double Chocolate & Cherry": { wheyOk: true, defaultCarbs: 34, hasElectrolyte: false, badge: "Real chocolate chunks — the texture the race bars can't use", perBar: [
-      { name: "Rice syrup", g: 18, role: "Binder" }, { name: "Dark chocolate chunks", g: 12, role: "Real chocolate, genuine indulgence" },
+    "Double Chocolate & Cherry": { agaveOk: true, wheyOk: true, defaultCarbs: 34, hasElectrolyte: false, badge: "Real chocolate chunks — the texture the race bars can't use", perBar: [
+      { name: "Rice syrup", g: 20, role: "Binder" }, { name: "Dark chocolate chunks", g: 12, role: "Real chocolate, genuine indulgence" },
       { name: "Tart cherry powder", g: 6, role: "Ties to the Recovery Bar family" }, { name: "Quick oats", g: 10, role: "Structure" },
       { name: "Cocoa (fat-reduced)", g: 4, role: "Deepens the chocolate" }, { name: "L-Malic acid", g: 0.3, role: "Balances cherry + chocolate sweetness" },
     ], method: ["Weigh out every ingredient before starting.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup gently in a small pan — just enough to loosen it, not to boil — then stir in the cocoa powder and citric acid until smooth and fully combined.", "Toast the oats in a dry pan for 2-3 minutes until lightly golden, then cool briefly.", "Fold the toasted oats, tart cherry powder and chocolate chunks into the warm cocoa syrup. Mix gently and only until just combined — overmixing will melt the chocolate chunks into the dough rather than leaving them as distinct pieces.", "Press the mixture onto the rice-paper-lined tray to an even ~1.5cm thickness, working quickly so the chocolate chunks don't have time to soften further.", "Chill for at least 1 hour until firm.", "Cut through the rice paper into bars with a sharp knife."] },
-    "Lemon Drizzle": { wheyOk: true, defaultCarbs: 32, hasElectrolyte: false, badge: "Home-snacking flavour — bright, less rich than the chocolate/caramel options", perBar: [
-      { name: "Rice syrup", g: 20, role: "Binder + carb" }, { name: "Quick oats", g: 12, role: "Structure" },
+    "Lemon Drizzle": { agaveOk: true, wheyOk: true, defaultCarbs: 32, hasElectrolyte: false, badge: "Home-snacking flavour — bright, less rich than the chocolate/caramel options", perBar: [
+      { name: "Rice syrup", g: 23.5, role: "Binder + carb" }, { name: "Quick oats", g: 12, role: "Structure" },
       { name: "Lemon juice powder", g: 3, role: "Bright citrus lead" }, { name: "Rice flour", g: 4, role: "Structure" },
       { name: "L-Malic acid", g: 0.3, role: "Sustained citrus finish" }, { name: "Himalayan salt", g: 0.3, role: "Rounds the sweetness" },
     ], method: ["Weigh out every ingredient before starting.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup gently in a small pan, then stir in the lemon juice powder and citric acid until fully dissolved — taste at this point, it should be noticeably sharp before the oats mellow it.", "Toast the oats in a dry pan for 2-3 minutes until lightly golden, then cool briefly.", "Fold the toasted oats, rice flour and salt into the lemon syrup until no dry patches remain.", "Press the mixture onto the rice-paper-lined tray to an even ~1.5cm thickness, smoothing the top with the back of a spoon.", "Chill for at least 1 hour until firm.", "Cut through the rice paper into bars with a sharp knife."] },
-    "Ginger Snap": { wheyOk: true, defaultCarbs: 32, hasElectrolyte: false, badge: "Home-snacking flavour — warm spice, good for a cold-weather training bar", perBar: [
-      { name: "Rice syrup", g: 20, role: "Binder + carb" }, { name: "Quick oats", g: 12, role: "Structure" },
+    "Ginger Snap": { agaveOk: true, wheyOk: true, defaultCarbs: 32, hasElectrolyte: false, badge: "Home-snacking flavour — warm spice, good for a cold-weather training bar", perBar: [
+      { name: "Rice syrup", g: 26.5, role: "Binder + carb" }, { name: "Quick oats", g: 12, role: "Structure" },
       { name: "Ground ginger", g: 1.5, role: "Warm spice lead" }, { name: "Rice flour", g: 4, role: "Structure" },
       { name: "L-Malic acid", g: 0.3, role: "Cuts sweetness" }, { name: "Cinnamon", g: 0.3, role: "Rounds the spice" },
     ], method: ["Weigh out every ingredient before starting.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup gently in a small pan, then stir in the ground ginger, cinnamon and citric acid until evenly distributed through the syrup.", "Toast the oats in a dry pan for 2-3 minutes until lightly golden, then cool briefly.", "Fold the toasted oats and rice flour into the spiced syrup until no dry pockets remain and the mixture holds together.", "Press onto the rice-paper-lined tray to an even ~1.5cm thickness.", "Chill for at least 1 hour until firm.", "Cut through the rice paper into bars with a sharp knife."] },
-    "Banana Bread": { wheyOk: true, defaultCarbs: 34, hasElectrolyte: false, badge: "New · home-snacking flavour. Soft, warm and familiar", perBar: [
-      { name: "Rice syrup", g: 20, role: "Binder + carb" }, { name: "Quick oats", g: 12, role: "Structure" },
+    "Banana Bread": { agaveOk: true, wheyOk: true, defaultCarbs: 34, hasElectrolyte: false, badge: "New · home-snacking flavour. Soft, warm and familiar", perBar: [
+      { name: "Rice syrup", g: 23, role: "Binder + carb" }, { name: "Quick oats", g: 12, role: "Structure" },
       { name: "Freeze-dried banana powder", g: 5, role: "Banana lead flavour" }, { name: "Walnuts (chopped)", g: 6, role: "Texture + richness" },
       { name: "Rice flour", g: 4, role: "Structure" }, { name: "Cinnamon", g: 0.3, role: "Banana-bread spice" }, { name: "Himalayan salt", g: 0.3, role: "Rounds the sweetness" },
     ], method: ["Weigh out every ingredient before starting.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup gently in a small pan, then stir in the banana powder, cinnamon and salt until smooth.", "Toast the oats and walnuts in a dry pan for 2-3 minutes until lightly golden, then cool briefly.", "Fold the toasted oats, walnuts and rice flour into the banana syrup until no dry patches remain.", "Press onto the rice-paper-lined tray to an even ~1.5cm thickness.", "Chill for at least 1 hour until firm.", "Cut through the rice paper into bars with a sharp knife."] },
-    "Apple Crumble": { wheyOk: true, defaultCarbs: 33, hasElectrolyte: false, badge: "New · home-snacking flavour. Apple, cinnamon and a toasted-oat crumble", perBar: [
-      { name: "Rice syrup", g: 20, role: "Binder + carb" }, { name: "Quick oats", g: 14, role: "Crumble texture" },
+    "Apple Crumble": { agaveOk: true, wheyOk: true, defaultCarbs: 33, hasElectrolyte: false, badge: "New · home-snacking flavour. Apple, cinnamon and a toasted-oat crumble", perBar: [
+      { name: "Rice syrup", g: 17, role: "Binder + carb" }, { name: "Quick oats", g: 14, role: "Crumble texture" },
       { name: "Freeze-dried apple powder", g: 5, role: "Apple lead flavour" }, { name: "Brown sugar", g: 3, role: "Crumble-topping flavour" },
       { name: "Rice flour", g: 4, role: "Structure" }, { name: "Cinnamon", g: 0.4, role: "Apple-pie spice" }, { name: "Himalayan salt", g: 0.3, role: "Rounds the sweetness" },
     ], method: ["Weigh out every ingredient before starting.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup and brown sugar gently until the sugar dissolves. Do not boil. Stir in the apple powder, cinnamon and salt.", "Toast the oats in a dry pan for 3-4 minutes until golden and nutty, then cool briefly. The deeper toast is the crumble flavour.", "Fold the oats and rice flour into the syrup until the mix holds together.", "Press onto the rice-paper-lined tray to an even ~1.5cm thickness.", "Chill for at least 1 hour until firm.", "Cut through the rice paper into bars with a sharp knife."] },
-    "Coconut & Lime": { wheyOk: true, defaultCarbs: 32, hasElectrolyte: false, badge: "New · home-snacking flavour. Bright and tropical, lighter than the chocolate bars", perBar: [
-      { name: "Rice syrup", g: 20, role: "Binder + carb" }, { name: "Quick oats", g: 12, role: "Structure" },
+    "Coconut & Lime": { agaveOk: true, wheyOk: true, defaultCarbs: 32, hasElectrolyte: false, badge: "New · home-snacking flavour. Bright and tropical, lighter than the chocolate bars", perBar: [
+      { name: "Rice syrup", g: 22.5, role: "Binder + carb" }, { name: "Quick oats", g: 12, role: "Structure" },
       { name: "Coconut milk powder", g: 4, role: "Coconut flavour lives in the fat" }, { name: "Lime juice powder", g: 2.5, role: "Bright citrus" },
       { name: "Rice flour", g: 4, role: "Structure" }, { name: "Citric acid", g: 0.3, role: "Sharpens the lime" }, { name: "Himalayan salt", g: 0.3, role: "Rounds the sweetness" },
     ], method: ["Weigh out every ingredient before starting.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup gently in a small pan, then stir in the coconut milk powder, lime juice powder, citric acid and salt until smooth. Taste: it should be noticeably sharp before the oats mellow it.", "Toast the oats in a dry pan for 2-3 minutes until lightly golden, then cool briefly.", "Fold the oats and rice flour into the syrup until no dry patches remain.", "Press onto the rice-paper-lined tray to an even ~1.5cm thickness.", "Chill for at least 1 hour until firm.", "Cut through the rice paper into bars with a sharp knife."] },
     "Nougat — Vanilla (Training)": { defaultCarbs: 38, hasElectrolyte: false, badge: "Lighter, aerated snack format — same nougat base, no race electrolytes", perBar: [
-      { name: "Rice syrup", g: 18, role: "Base syrup — whipped hot into whites" }, { name: "Honey", g: 10, role: "Traditional flavour + carbs" },
+      { name: "Rice syrup", g: 16.5, role: "Base syrup — whipped hot into whites" }, { name: "Honey", g: 10, role: "Traditional flavour + carbs" },
       { name: "Maltodextrin", g: 8, role: "Carb payload" }, { name: "Fructose", g: 6, role: "Carb payload" },
       { name: "Egg white powder (or aquafaba)", g: 3, role: "The aeration" }, { name: "Rice flour", g: 4, role: "Light structure" },
       { name: "Vanilla extract", g: 0.3, role: "Classic nougat flavour" },
     ], method: ["Weigh everything and have two sheets of edible rice paper cut to the size of your tray before you begin.", "Line the tray with the first sheet of rice paper.", "Whip the rehydrated egg white powder (or aquafaba) to stiff, glossy peaks.", "Heat the rice syrup and honey together with a sugar thermometer to 120-130°C (soft-ball stage), without stirring once boiling.", "With the mixer running, pour the hot syrup into the whites in a thin stream down the side of the bowl. Whip 3-5 minutes until thick and glossy.", "Working quickly, fold in the maltodextrin, fructose, rice flour and vanilla extract by hand.", "Spread onto the rice-paper-lined tray, top with the second sheet of rice paper, and press flat and even.", "Leave to set at room temperature for 4-6 hours — do NOT refrigerate.", "Cut through both layers of rice paper into bars with a sharp, lightly oiled knife."] },
-    "Chocolate Peanut": { wheyBar: true, defaultCarbs: 34, hasElectrolyte: false, badge: "New \u00b7 whey protein bar. Carbs shown are for the base, whey is added on top by the ratio you pick", perBar: [
-      { name: "Rice syrup", g: 26, role: "Binder + carb" },
+    "Chocolate Peanut": { agaveOk: true, wheyBar: true, defaultCarbs: 34, hasElectrolyte: false, badge: "New \u00b7 whey protein bar. Carbs shown are for the base, whey is added on top by the ratio you pick", perBar: [
+      { name: "Rice syrup", g: 24, role: "Binder + carb" },
       { name: "Quick oats", g: 14, role: "Structure" },
       { name: "Peanut butter (smooth)", g: 12, role: "Flavour + fat, softens the whey" },
       { name: "Cocoa (fat-reduced)", g: 4, role: "Chocolate depth" },
       { name: "Rice flour", g: 4, role: "Structure" },
       { name: "Himalayan salt", g: 0.4, role: "Peanut and chocolate lift" },
     ], method: ["Weigh out every ingredient before starting. The whey amount is set by the ratio you choose, so use the table.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup gently in a small pan to about 40\u00b0C, just enough to loosen it and no hotter, then stir in the peanut butter, cocoa and salt until smooth. It should be only comfortably warm to the touch (40\u00b0C or below) before the whey goes in. If you went hotter, let it cool first, because hot syrup makes whey clump.", "In a large bowl, whisk the vanilla whey with the oats, rice flour and any other dry ingredients until evenly mixed.", "Pour the warm syrup mix over the dry mix and fold firmly until a stiff dough forms. Whey absorbs a lot of liquid. If it is crumbly, work in warm water or rice syrup a teaspoon at a time until it holds together.", "Press hard onto the rice-paper-lined tray to an even ~1.5cm thickness. Lay a second sheet of rice paper on top and press with your hand.", "Chill for at least 2 hours until firm. Whey bars firm up further over a day or two, so eat within about 5 days or freeze.", "Cut through the rice paper into bars with a sharp knife, wiping the blade between cuts."] },
-    "Vanilla Cookie Dough": { wheyBar: true, defaultCarbs: 36, hasElectrolyte: false, badge: "New \u00b7 whey protein bar. Soft, cookie-dough style, best with a vanilla whey", perBar: [
-      { name: "Rice syrup", g: 26, role: "Binder + carb" },
+    "Vanilla Cookie Dough": { agaveOk: true, wheyBar: true, defaultCarbs: 36, hasElectrolyte: false, badge: "New \u00b7 whey protein bar. Soft, cookie-dough style, best with a vanilla whey", perBar: [
+      { name: "Rice syrup", g: 24.5, role: "Binder + carb" },
       { name: "Quick oats", g: 16, role: "Structure" },
       { name: "Almond butter", g: 10, role: "Richness, softens the whey" },
       { name: "Dark chocolate chips", g: 4, role: "Cookie-dough chips" },
@@ -543,8 +543,8 @@ const BARS = {
       { name: "Vanilla extract", g: 0.5, role: "Cookie flavour" },
       { name: "Himalayan salt", g: 0.4, role: "Rounds the sweetness" },
     ], method: ["Weigh out every ingredient before starting. The whey amount is set by the ratio you choose, so use the table.", "Line a tray with edible rice paper, cut to size.", "Warm the rice syrup gently in a small pan to about 40\u00b0C, just enough to loosen it and no hotter, then stir in the almond butter, vanilla and salt until smooth. It should be only comfortably warm to the touch (40\u00b0C or below) before the whey goes in. If you went hotter, let it cool first, because hot syrup makes whey clump.", "In a large bowl, whisk the vanilla whey with the oats, rice flour and any other dry ingredients until evenly mixed.", "Pour the warm syrup mix over the dry mix and fold firmly until a stiff dough forms, then fold in the chocolate chips last. Whey absorbs a lot of liquid. If it is crumbly, work in warm water or rice syrup a teaspoon at a time until it holds together.", "Press hard onto the rice-paper-lined tray to an even ~1.5cm thickness. Lay a second sheet of rice paper on top and press with your hand.", "Chill for at least 2 hours until firm. Whey bars firm up further over a day or two, so eat within about 5 days or freeze.", "Cut through the rice paper into bars with a sharp knife, wiping the blade between cuts."] },
-    "Raspberry Yoghurt": { wheyBar: true, defaultCarbs: 34, hasElectrolyte: false, badge: "New \u00b7 whey protein bar. Tart berry, lighter than the chocolate options", perBar: [
-      { name: "Rice syrup", g: 26, role: "Binder + carb" },
+    "Raspberry Yoghurt": { agaveOk: true, wheyBar: true, defaultCarbs: 34, hasElectrolyte: false, badge: "New \u00b7 whey protein bar. Tart berry, lighter than the chocolate options", perBar: [
+      { name: "Rice syrup", g: 21.5, role: "Binder + carb" },
       { name: "Quick oats", g: 14, role: "Structure" },
       { name: "Freeze-dried raspberry powder", g: 5, role: "Tart berry lead" },
       { name: "Lime juice powder", g: 2, role: "Yoghurt-like sharpness" },
@@ -566,7 +566,7 @@ const BARS = {
     "Apple & Cinnamon": { defaultCarbs: 30, hasElectrolyte: true, badge: "Classic stroopwafel pairing — comfort flavour for cooler days", perBar: [
       { name: "Rice flour", g: 14, role: "Biscuit structure" }, { name: "Rice syrup (biscuit)", g: 6, role: "Biscuit bind" },
       { name: "Coconut oil", g: 4, role: "Crisp + richness" }, { name: "Cane sugar", g: 3, role: "Browning + crisp" },
-      { name: "Rice syrup (filling)", g: 9, role: "Filling base" }, { name: "Agave syrup (filling)", g: 4, role: "Softness + fructose" },
+      { name: "Rice syrup (filling)", g: 8.5, role: "Filling base" }, { name: "Agave syrup (filling)", g: 4, role: "Softness + fructose" },
       { name: "Freeze-dried apple powder", g: 1.5, role: "Real fruit flavour" }, { name: "Cinnamon", g: 0.1, role: "Classic pairing" },
       { name: "L-Malic acid", g: 0.25, role: "Apple's natural acid" }, { name: "Electrolyte premix (no Mg)", g: 1.5, role: "Sodium-forward", isElectrolyte: true },
     ], method: ["Weigh out every ingredient before starting, and preheat your pizzelle/stroopwafel iron.", "Rub the coconut oil into the rice flour and cane sugar until it resembles breadcrumbs, add the biscuit-portion rice syrup, and bring together into a stiff dough. Rest 15 minutes.", "Divide into ~28g balls and press one at a time in the hot iron for 30-60 seconds until golden and thin. Cool the biscuits flat.", "Warm the filling-portion rice syrup and agave together in a small pan to around 110°C — just hot enough to be fully fluid, no thermometer precision needed here since there's no caramelisation step.", "Off the heat, stir in the apple powder, cinnamon, citric acid and electrolyte premix until evenly combined.", "While the filling is still warm, spread it over one biscuit half, leaving a small border, then press a second biscuit half on top.", "Optionally wrap the finished waffle in a small sheet of edible rice paper for extra grip in transit.", "Leave flat until fully cool and set, then wrap individually."] },
@@ -581,7 +581,7 @@ function CarbMixPage() {
   const [carbsPerServing, setCarbsPerServing] = useState(90);
   const [flavourCategory, setFlavourCategory] = useState("sweet");
   const [flavour, setFlavour] = useState("Apple");
-  const [raceSodiumMg, setRaceSodiumMg] = useState(1000);
+  const [raceSodiumMg, setRaceSodiumMg] = useState(720);
   const [includeAntiClump, setIncludeAntiClump] = useState(false);
   const [withCaffeine, setWithCaffeine] = useState(false);
   const [caffeineMgPerServe, setCaffeineMgPerServe] = useState(75);
@@ -630,12 +630,11 @@ function CarbMixPage() {
     }
     return { name: f.name, dose, listedDose: f.dose, role, format: f.format };
   });
-  const flavourRows = applyAcidChoice(baseFlavourItems, acidChoice).map((f) => {
+  const flavourRows = applyAcidChoice(baseFlavourItems, acidChoice, "dose", CARBMIX_ACID_BOOST).map((f) => {
     const basis = flavourData.category === "sweet" ? batchG / 100 : servings;
     return { name: f.name, doseLabel: `${+f.listedDose.toFixed(3)}g ${flavourData.category === "sweet" ? "/100g" : "/serve"}`, amount: `${(f.dose * basis).toFixed(2)}g`, role: f.role, format: f.format };
   });
 
-  const sweetExtraStevia = withElectrolytes && flavourData.category === "sweet" && !flavourData.ingredients.some((f) => f.name.includes("Stevia"));
   const magWarning = withElectrolytes ? cumulativeMgWarning(80, servings) : null;
   let stepNum = 2;
 
@@ -662,7 +661,7 @@ function CarbMixPage() {
             <Pill active={!withElectrolytes} onClick={() => setWithElectrolytes(false)}>No — separate bottle</Pill>
             <Pill active={withElectrolytes} onClick={() => setWithElectrolytes(true)}>Yes — combine into this mix</Pill>
           </div>
-          {withElectrolytes && <div style={{ marginTop: 14 }}><NumberInput label="Total sodium target (mg per serving)" value={raceSodiumMg} onChange={setRaceSodiumMg} width={220} hint="Default 1000mg for hot/long races." /></div>}
+          {withElectrolytes && <div style={{ marginTop: 14 }}><NumberInput label="Total sodium target (mg per serving)" value={raceSodiumMg} onChange={setRaceSodiumMg} width={220} hint="Default 720mg per 500ml bottle. Go higher for hot or long races." /></div>}
         </div>
         <div>
           <div style={{ fontSize: 12.5, color: teal, fontFamily: fontBody, fontWeight: 600, marginBottom: 8 }}>Caffeine?</div>
@@ -714,9 +713,8 @@ function CarbMixPage() {
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>{flavourNames.map((f) => <Pill key={f} active={flavour === f} onClick={() => setFlavour(f)}>{f}</Pill>)}</div>
         <IngredientTable rows={flavourRows} />
-        {sweetExtraStevia && <p style={{ fontFamily: fontBody, fontSize: 12.5, color: clay, marginTop: 12, fontWeight: 600 }}>★ Salt from the electrolytes will dull this flavour's fruit notes slightly. Consider a trace more stevia.</p>}
         {flavourCategory === "savoury" && withElectrolytes && <p style={{ fontFamily: fontBody, fontSize: 12.5, color: clay, marginTop: 12, fontWeight: 600 }}>★ The added salt line above has already been halved to avoid over-salting on top of the sachet's own sodium.</p>}
-        {acidChoice !== "citric" && <p style={{ fontFamily: fontBody, fontSize: 12.5, color: clay, marginTop: 12, fontWeight: 600 }}>★ Acid test batch — change only this one thing compared with your last bottle, and note how it feels. {acidChoice === "none" && flavour.startsWith("Naked") ? "Naked has nothing but acid and stevia, so with no acid this is only stevia." : ""}</p>}
+        {acidChoice !== "citric" && <p style={{ fontFamily: fontBody, fontSize: 12.5, color: clay, marginTop: 12, fontWeight: 600 }}>★ Acid test batch — change only this one thing compared with your last bottle, and note how it feels. {acidChoice === "none" && flavour.startsWith("Naked") ? "Naked is just the acid on top of the carbs, so with no acid it is plain sugar." : ""}</p>}
       </Card>
 
       <Card title="Mixing instructions">
@@ -752,7 +750,7 @@ function CarbMixPage() {
 function ElectrolytesPage() {
   const [type, setType] = useState("Daily");
   const [servings, setServings] = useState(10);
-  const [raceSodiumMg, setRaceSodiumMg] = useState(1000);
+  const [raceSodiumMg, setRaceSodiumMg] = useState(720);
   const flavourNames = Object.keys(ELECTROLYTE_FLAVOURS[type]);
   const [flavour, setFlavour] = useState(flavourNames[0]);
   const { acid } = useAcid();
@@ -786,7 +784,7 @@ function ElectrolytesPage() {
         </div>
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
           <NumberInput label="Number of sachets" value={servings} onChange={setServings} />
-          {type === "Race" && <NumberInput label="Sodium target (mg/sachet)" value={raceSodiumMg} onChange={setRaceSodiumMg} hint="Default 1000mg" />}
+          {type === "Race" && <NumberInput label="Sodium target (mg/sachet)" value={raceSodiumMg} onChange={setRaceSodiumMg} hint="Default 720mg per 500ml bottle" />}
         </div>
       </Card>
       {type === "Race" && longRace && <Warn>⚠️ {servings} sachets is a long race. Consider tapering to one sachet per 90 minutes after hour 10 rather than hourly.</Warn>}
@@ -833,7 +831,7 @@ function GelsPage() {
   const [bottleMl, setBottleMl] = useState(120);
   const { acid } = useAcid();
 
-  const riceEff = 0.56, agaveEff = 0.60;
+  const riceEff = 0.79, agaveEff = 0.762; // from the Biona brown rice syrup label (79g carbs/100g) and the organic blue agave label (16g carbs per 21g)
   const r1 = ratio === "2:1" ? 2 : 1.25;
   const riceSyrupPerGel = (carbsPerGel * r1) / (r1 + 1) / riceEff;
   const agavePerGel = (carbsPerGel * 1) / (r1 + 1) / agaveEff;
@@ -890,7 +888,7 @@ function GelsPage() {
       { name: "Silicon dioxide", doseLabel: "0.1%", amount: `${(cmTotalPowder * 0.001).toFixed(1)}g`, role: "Anti-caking", format: "Powder" },
     ] : []),
   ];
-  const cmFlavourRows = applyAcidChoice(CARB_FLAVOURS[cmFlavour]?.ingredients || [], acid).map((f) => ({ name: f.name, doseLabel: `${+f.dose.toFixed(3)}g/100g powder`, amount: `${((cmTotalPowder * f.dose) / 100).toFixed(2)}g`, role: f.role, format: f.format }));
+  const cmFlavourRows = applyAcidChoice(CARB_FLAVOURS[cmFlavour]?.ingredients || [], acid, "dose", CARBMIX_ACID_BOOST).map((f) => ({ name: f.name, doseLabel: `${+f.dose.toFixed(3)}g/100g powder`, amount: `${((cmTotalPowder * f.dose) / 100).toFixed(2)}g`, role: f.role, format: f.format }));
 
   const cmElectrolytePerGel = withElectrolytes ? raceBase(raceSodiumMg).map((e) => {
     if (e.el === "trace") return { name: e.name, doseLabel: `${e.flatG}g/gel`, amount: `${(e.flatG * numGels).toFixed(2)}g`, role: e.role, format: "Powder" };
@@ -1077,9 +1075,9 @@ function GelsPage() {
 const NUTR = [
   [/maltodextrin/i, { c: 0.95, p: 0, f: 0, fr: 0 }],
   [/^fructose/i, { c: 1.0, p: 0, f: 0, fr: 1 }],
-  [/rice syrup \+ light brown sugar/i, { c: 0.8, p: 0, f: 0, fr: 0.125 }],
-  [/rice syrup|extra binder/i, { c: 0.75, p: 0, f: 0, fr: 0 }],
-  [/agave/i, { c: 0.76, p: 0, f: 0, fr: 0.7 }],
+  [/rice syrup \+ light brown sugar/i, { c: 0.83, p: 0, f: 0, fr: 0.118 }],
+  [/rice syrup|extra binder/i, { c: 0.79, p: 0, f: 0, fr: 0 }],
+  [/agave/i, { c: 0.762, p: 0, f: 0, fr: 0.7 }],
   [/honey/i, { c: 0.82, p: 0, f: 0, fr: 0.46 }],
   [/brown sugar|cane sugar/i, { c: 0.98, p: 0, f: 0, fr: 0.5 }],
   [/whey/i, { c: 0.06, p: 0.8, f: 0.05, fr: 0 }],
@@ -1125,6 +1123,57 @@ function pathwayVerdict(glu, fru) {
   return "Glucose-heavy (above 2:1). Fine, but it uses less of the fructose pathway.";
 }
 
+const RICE_C = 0.79, AGAVE_C = 0.762, AGAVE_FR = 0.7;
+function carbGroup(name) {
+  if (/agave/i.test(name)) return "Agave (fructose-rich syrup)";
+  if (/maltodextrin/i.test(name)) return "Maltodextrin";
+  if (/^fructose/i.test(name)) return "Fructose";
+  if (/rice syrup|honey|brown sugar|cane sugar|extra binder/i.test(name)) return "Rice syrup and other sugars";
+  if (/oats|rice flour/i.test(name)) return "Oats and rice flour (starch)";
+  if (/chocolate|cocoa/i.test(name)) return "Chocolate and cocoa";
+  if (/whey|egg white/i.test(name)) return "Protein powders (whey lactose)";
+  if (/coconut|butter|walnut|almond|peanut/i.test(name)) return "Nuts, nut butters, coconut";
+  if (/powder|fruit|banana|apple|cherry|raspberry|strawberry|lime|lemon|orange|mango|pineapple/i.test(name)) return "Fruit and juice powders";
+  return "Other";
+}
+// Works out the grams per bar so the TOTAL carbs from every ingredient equals the target,
+// and (optionally) swaps part of the rice syrup for agave to reach a glucose:fructose ratio.
+function planBar(bar, s, perBarAdj, glucosePct, fructosePct) {
+  const T = s.targetCarbs;
+  const proteinN = s.proteinRatio === "3:1" ? 3 : 2;
+  let items = perBarAdj.filter((ing) => !(ing.isElectrolyte && !s.includeElectrolyte)).map((ing) => {
+    let g = ing.g;
+    if (bar.ratioAdjustable && (ing.isMalto || ing.isFructose)) {
+      const comb = perBarAdj.find((i) => i.isMalto).g + perBarAdj.find((i) => i.isFructose).g;
+      g = ing.isMalto ? (comb * glucosePct) / 100 : (comb * fructosePct) / 100;
+    }
+    return { name: ing.name, g, role: ing.role };
+  });
+  let extras = 0; // carbs that come from the protein add-ins, so the total still hits the target
+  if (bar.wheyBar) extras += (0.06 * T) / proteinN / 0.8;
+  if (bar.wheyOk && s.wheyOn) { extras += 0.06 * s.wheyG; if (s.wheyG > 10) extras += RICE_C * (s.wheyG - 10) * 0.4; }
+  const baseCarbs = items.reduce((a, it) => a + it.g * nutrFor(it.name).c, 0);
+  const k = Math.max(T - extras, 1) / baseCarbs;
+  items = items.map((it) => ({ ...it, g: it.g * k }));
+  let note = null;
+  if (bar.agaveOk && s.agave && s.agave !== "off") {
+    const phi = s.agave === "2:1" ? 1 / 3 : 0.8 / 1.8; // fructose share of total carbs
+    const idx = items.findIndex((it) => it.name === "Rice syrup");
+    if (idx >= 0) {
+      const syrupC = items[idx].g * RICE_C;
+      const F0 = items.reduce((a, it, i) => { if (i === idx) return a; const n = nutrFor(it.name); return a + it.g * n.c * n.fr; }, 0);
+      const want = (phi * T - F0) / AGAVE_FR;
+      const a = Math.max(0, Math.min(want, syrupC));
+      if (want > syrupC) note = `The syrups alone can't carry the full ${s.agave === "2:1" ? "2:1" : "1:0.8"} ratio here, so it uses all-agave syrup and gets as close as it can (see the split below). Add some fructose powder, or use fewer oats, to go further.`;
+      else if (want < 0) note = "This bar already gets enough fructose from its fruit or chocolate, so no agave is needed.";
+      const parts = [];
+      if (a > 0.05) parts.push({ name: "Agave syrup", g: a / AGAVE_C, role: `Fructose source (assumed ${AGAVE_FR * 100}% of its carbs are fructose). Replaces part of the rice syrup.` });
+      if (syrupC - a > 0.05) parts.push({ name: "Rice syrup", g: (syrupC - a) / RICE_C, role: items[idx].role });
+      items = [...items.slice(0, idx), ...parts, ...items.slice(idx + 1)];
+    }
+  }
+  return { items, note };
+}
 function BarsPage() {
   const [openCategory, setOpenCategory] = useState("Race");
   const [openBar, setOpenBar] = useState(null);
@@ -1133,7 +1182,7 @@ function BarsPage() {
   const [settings, setSettings] = useState({}); // { barName: { count, targetCarbs, ratio, includeElectrolyte } }
 
   function getSettings(name, bar) {
-    return settings[name] || { count: 1, targetCarbs: bar.defaultCarbs, ratio: "2:1", includeElectrolyte: true, wheyOn: false, wheyG: 10, proteinRatio: "2:1" };
+    return settings[name] || { count: 1, targetCarbs: bar.defaultCarbs, ratio: "2:1", includeElectrolyte: true, wheyOn: false, wheyG: 10, proteinRatio: "2:1", agave: "off" };
   }
   function updateSetting(name, patch) {
     setSettings((s) => ({ ...s, [name]: { ...getSettings(name, BARS[openCategory][name]), ...patch } }));
@@ -1149,33 +1198,21 @@ function BarsPage() {
 
       {Object.entries(BARS[openCategory]).map(([name, bar]) => {
         const s = getSettings(name, bar);
-        const scale = (s.targetCarbs / bar.defaultCarbs) * s.count;
-        const { glucosePct, fructosePct } = bar.ratioAdjustable ? ratioSplit(s.ratio) : { glucosePct: null, fructosePct: null };
-
         const perBarAdj = applyAcidChoice(bar.perBar, acid, "g");
-        const rows = perBarAdj
-          .filter((ing) => !(ing.isElectrolyte && !s.includeElectrolyte))
-          .map((ing) => {
-            let grams = ing.g;
-            if (bar.ratioAdjustable && (ing.isMalto || ing.isFructose)) {
-              const maltoBase = perBarAdj.find((i) => i.isMalto).g;
-              const fructoseBase = perBarAdj.find((i) => i.isFructose).g;
-              const combined = maltoBase + fructoseBase;
-              grams = ing.isMalto ? (combined * glucosePct) / 100 : (combined * fructosePct) / 100;
-            }
-            return { name: ing.name, doseLabel: `${fmtG(grams)}g / bar (base)`, amount: `${fmtG(grams * scale)}g`, role: ing.role, format: "—" };
-          });
+        const plan = planBar(bar, s, perBarAdj, glucosePct, fructosePct);
+        const rows = plan.items.map((it) => ({ name: it.name, doseLabel: `${fmtG(it.g)}g / bar`, amount: `${fmtG(it.g * s.count)}g`, role: it.role, format: "—" }));
         const proteinN = s.proteinRatio === "3:1" ? 3 : 2;
         const wheyPerBar = bar.wheyBar ? s.targetCarbs / proteinN / 0.8 : 0;
         if (bar.wheyBar) rows.push({ name: "Vanilla whey protein powder", doseLabel: `${fmtG(wheyPerBar)}g / bar at ${s.proteinRatio}`, amount: `${fmtG(wheyPerBar * s.count)}g`, role: `Sets carbs:protein at ${s.proteinRatio} (assumes 80% protein). Add with the dry ingredients. Syrup should be about 40°C or below.`, format: "Powder" });
         if (bar.wheyOk && s.wheyOn) rows.push({ name: "Vanilla whey protein powder", doseLabel: `${fmtG(s.wheyG)}g / bar`, amount: `${fmtG(s.wheyG * s.count)}g`, role: "Optional protein. Not scaled with carbs. Add dry. Syrup should be about 40°C or below.", format: "Powder" });
         if (bar.wheyOk && s.wheyOn && s.wheyG > 10) rows.push({ name: "Extra binder (rice syrup or nut butter)", doseLabel: `${fmtG((s.wheyG - 10) * 0.4)}g / bar`, amount: `${fmtG((s.wheyG - 10) * 0.4 * s.count)}g`, role: "Estimate only: high whey dries the dough out. Add as needed, adds some carbs.", format: "Syrup / spread" });
+        const agaveMethod = bar.agaveOk && s.agave !== "off" ? ["Agave: warm the agave together with the rice syrup, to about 40-50°C and no hotter, since agave browns and thins at lower temperatures than rice syrup. The dough will be softer and stickier. Press it firmly, chill for the full time, and keep the bars cool."] : [];
         const wheyMethod = bar.wheyOk && s.wheyOn ? [`Whey: whisk the ${fmtG(s.wheyG)}g per bar of vanilla whey into the dry ingredients (oats and flour) first, then add the syrup once it is only comfortably warm (about 40°C or below). For the Salted Caramel bar, let the caramel cool to about 60°C, as low as it stays workable, and mix quickly. Hot syrup or caramel makes whey clump. If the dough turns dry or crumbly, work in a teaspoon of warm water or rice syrup at a time.`] : [];
 
         return (
           <Accordion key={name} title={name} badge={bar.badge} open={openBar === name} onToggle={() => setOpenBar(openBar === name ? null : name)}>
             <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 20 }}>
-              <NumberInput label="Carbs per bar (g)" value={s.targetCarbs} onChange={(v) => updateSetting(name, { targetCarbs: v })} width={150} hint={`Default ${bar.defaultCarbs}g`} />
+              <NumberInput label="Carbs per bar (g)" value={s.targetCarbs} onChange={(v) => updateSetting(name, { targetCarbs: v })} width={150} hint={`Total from all ingredients. Default ${bar.defaultCarbs}g`} />
               <NumberInput label="How many bars?" value={s.count} onChange={(v) => updateSetting(name, { count: v })} width={130} />
             </div>
             {bar.ratioAdjustable && (
@@ -1185,6 +1222,16 @@ function BarsPage() {
                   <Pill active={s.ratio === "2:1"} onClick={() => updateSetting(name, { ratio: "2:1" })}>2:1</Pill>
                   <Pill active={s.ratio === "1:0.8"} onClick={() => updateSetting(name, { ratio: "1:0.8" })}>1:0.8</Pill>
                 </div>
+              </div>
+            )}
+            {bar.agaveOk && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12.5, color: teal, fontFamily: fontBody, fontWeight: 600, marginBottom: 8 }}>Syrup mix (glucose : fructose)</div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <Pill active={s.agave === "off"} onClick={() => updateSetting(name, { agave: "off" })}>Rice syrup only (pure glucose)</Pill>
+                  <Pill active={s.agave === "2:1"} onClick={() => updateSetting(name, { agave: "2:1" })}>Rice + agave, 2:1</Pill>
+                </div>
+                <p style={{ fontFamily: fontBody, fontSize: 12, color: muted, fontStyle: "italic", margin: "8px 0 0 0" }}>Swaps part of the rice syrup for agave so the whole bar (including oats, fruit and chocolate) lands on the ratio. Agave is assumed to be 70% fructose, so check your label. Bars come out softer and stickier, so chill firmly and keep cool.{plan.note ? " " + plan.note : ""}</p>
               </div>
             )}
             {bar.wheyBar && (
@@ -1223,6 +1270,34 @@ function BarsPage() {
               <Pill active={!!macroOpen[name]} onClick={() => setMacroOpen((m) => ({ ...m, [name]: !m[name] }))}>{macroOpen[name] ? "Hide macros and carb split" : "Show macros and carb split"}</Pill>
             </div>
             <div style={{ marginBottom: 20 }}><IngredientTable rows={rows} /></div>
+            {(() => {
+              const mac = computeMacros(rows, s.count);
+              const b = mac.perBar;
+              const groups = {};
+              mac.lines.forEach((l) => { if (l.carbs < 0.05) return; const g = carbGroup(l.name); groups[g] = groups[g] || { carbs: 0, glucose: 0, fructose: 0, items: [] }; groups[g].carbs += l.carbs; groups[g].glucose += l.glucose; groups[g].fructose += l.fructose; groups[g].items.push(l.name); });
+              const list = Object.entries(groups).sort((x, y) => y[1].carbs - x[1].carbs);
+              const f1 = (x) => x.toFixed(1);
+              const th = { textAlign: "left", padding: "6px 8px", borderBottom: `1px solid ${line}`, color: teal, fontWeight: 600 };
+              const td = { padding: "6px 8px", borderBottom: `1px solid ${line}`, verticalAlign: "top" };
+              const ratioTxt = b.fructose >= 0.5 ? `${(b.glucose / b.fructose).toFixed(1)} : 1` : "no fructose";
+              return (
+                <div style={{ border: `1px solid ${line}`, borderRadius: 8, padding: 14, marginBottom: 20, fontFamily: fontBody, fontSize: 13 }}>
+                  <h4 style={{ fontFamily: fontDisplay, fontSize: 15, color: teal, margin: "0 0 4px 0" }}>Where the {f1(b.carbs)}g of carbs per bar come from</h4>
+                  <p style={{ margin: "0 0 10px 0", color: muted, fontSize: 12.5 }}>{list.map(([g, v]) => `${f1(v.carbs)}g ${g.toLowerCase()}`).join(", ")}.</p>
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+                    <thead><tr><th style={th}>Source</th><th style={th}>Carbs / bar</th><th style={th}>Share</th><th style={th}>Glucose</th><th style={th}>Fructose</th></tr></thead>
+                    <tbody>
+                      {list.map(([g, v]) => (
+                        <tr key={g}><td style={td}>{g}<div style={{ color: muted, fontSize: 11.5 }}>{v.items.join(", ")}</div></td><td style={td}>{f1(v.carbs)}g</td><td style={td}>{Math.round((v.carbs / b.carbs) * 100)}%</td><td style={td}>{f1(v.glucose)}g</td><td style={td}>{f1(v.fructose)}g</td></tr>
+                      ))}
+                      <tr><td style={{ ...td, fontWeight: 600 }}>Total</td><td style={{ ...td, fontWeight: 600 }}>{f1(b.carbs)}g</td><td style={td}>100%</td><td style={{ ...td, fontWeight: 600 }}>{f1(b.glucose)}g</td><td style={{ ...td, fontWeight: 600 }}>{f1(b.fructose)}g</td></tr>
+                    </tbody>
+                  </table>
+                  <p style={{ margin: "0 0 8px 0", color: teal, fontWeight: 600 }}>Glucose : fructose = {ratioTxt}. {pathwayVerdict(b.glucose, b.fructose)}</p>
+                  <p style={{ margin: 0, fontSize: 12, color: muted, fontStyle: "italic" }}>Carbs per bar is the total from every ingredient, so oats, flour, fruit powders and chocolate chips count towards it and the syrups make up the rest. Estimated from typical label values, except rice syrup and agave which use your labels. Edible rice paper and fibre are not counted. Sucrose counts as half glucose, half fructose.</p>
+                </div>
+              );
+            })()}
             {macroOpen[name] && (() => {
               const mac = computeMacros(rows, s.count);
               const b = mac.perBar, k = Math.max(s.count, 1);
@@ -1259,12 +1334,12 @@ function BarsPage() {
             })()}
             <div>
               <h4 style={{ fontFamily: fontDisplay, fontSize: 15, color: teal, margin: "0 0 12px 0" }}>Method</h4>
-              <MethodSteps steps={[...bar.method, ...wheyMethod]} />
+              <MethodSteps steps={[...bar.method, ...agaveMethod, ...wheyMethod]} />
               <p style={{ fontFamily: fontBody, fontSize: 12, color: muted, fontStyle: "italic", margin: "4px 0 0 0" }}>The steps name citric acid, the standard. If you've changed the acid setting above, follow the ingredient table.</p>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
               <AddToListButton
-                label={`${name} — ${s.count} bar(s) @ ${s.targetCarbs}g carbs${bar.wheyBar ? ` @ ${s.proteinRatio} carb:protein` : bar.wheyOk && s.wheyOn ? " + whey" : ""}${acidTag(acid)}`}
+                label={`${name} — ${s.count} bar(s) @ ${s.targetCarbs}g carbs${bar.wheyBar ? ` @ ${s.proteinRatio} carb:protein` : bar.wheyOk && s.wheyOn ? " + whey" : ""}${bar.agaveOk && s.agave !== "off" ? ` + agave ${s.agave}` : ""}${acidTag(acid)}`}
                 items={rows.map((r) => ({ name: r.name, grams: parseG(r.amount) }))}
               />
             </div>
@@ -1297,7 +1372,7 @@ function AllFlavoursPage() {
             const key = `${group.label}::${name}`;
             return (
               <Accordion key={key} title={name} open={openKey === key} onToggle={() => setOpenKey(openKey === key ? null : key)}>
-                <IngredientTable rows={applyAcidChoice(ingredients, acid).map((f) => ({ name: f.name, doseLabel: group.doseNote(+f.dose.toFixed(3)), amount: `${+f.dose.toFixed(3)}g base dose`, role: f.role, format: f.format }))} />
+                <IngredientTable rows={applyAcidChoice(ingredients, acid, "dose", /^Carb Mix/.test(group.label) ? CARBMIX_ACID_BOOST : 1).map((f) => ({ name: f.name, doseLabel: group.doseNote(+f.dose.toFixed(3)), amount: `${+f.dose.toFixed(3)}g base dose`, role: f.role, format: f.format }))} />
               </Accordion>
             );
           })}
@@ -1313,7 +1388,7 @@ function RaceDayPage() {
   const [carbsPerHr, setCarbsPerHr] = useState(90);
   const [ratio, setRatio] = useState("2:1");
   const [withElectrolytes, setWithElectrolytes] = useState(true);
-  const [raceSodiumMg, setRaceSodiumMg] = useState(1000);
+  const [raceSodiumMg, setRaceSodiumMg] = useState(720);
   const [withCaffeine, setWithCaffeine] = useState(false);
   const [caffeineMgPerHr, setCaffeineMgPerHr] = useState(40);
 
